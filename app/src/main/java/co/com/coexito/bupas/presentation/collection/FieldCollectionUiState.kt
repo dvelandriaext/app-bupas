@@ -11,6 +11,7 @@ import co.com.coexito.bupas.domain.usecase.CollectionTotalsSummary
 
 @Immutable
 data class TerceroProvenienteFormState(
+    val editingId: String? = null,
     val nit: String = "",
     val razonSocial: String = "",
     val tipoBateria: TipoBateriaProveniente = TipoBateriaProveniente.AUTO,
@@ -22,12 +23,17 @@ data class TerceroProvenienteFormState(
     val cantidadError: String? = null,
     val telefonoError: String? = null,
     val correoError: String? = null
-)
+) {
+    val isEditMode: Boolean
+        get() = editingId != null
+}
 
 @Immutable
 data class FieldCollectionUiState(
     val order: OrdenRecoleccion? = null,
-    val selectedStatus: OrdenStatus = OrdenStatus.EN_ATENCION,
+    val selectedStatus: OrdenStatus = OrdenStatus.ORDEN_ASIGNADA,
+    val fechaHoraInicioAtencion: String? = null,
+    val fechaHoraFinalizacion: String? = null,
     val articulos: List<ArticuloBupas> = emptyList(),
     val totalsSummary: CollectionTotalsSummary = CollectionTotalsSummary(
         totalUnidades = 0,
@@ -41,6 +47,8 @@ data class FieldCollectionUiState(
     val observacionesCampo: String = "",
     val nombreResponsableEntrega: String = "",
     val identificacionResponsableEntrega: String = "",
+    val firmaDigitalBase64: String? = null,
+    val isOfflineDraftSaved: Boolean = false,
     val validationErrors: FieldCollectionValidationErrors = FieldCollectionValidationErrors(),
     val isLoading: Boolean = true,
     val isSaving: Boolean = false,
@@ -57,14 +65,21 @@ data class FieldCollectionUiState(
 
     val isNoRecolectadaSelected: Boolean
         get() = selectedStatus == OrdenStatus.NO_RECOLECTADA
+
+    val isCollectionSectionEnabled: Boolean
+        get() = selectedStatus == OrdenStatus.EN_ATENCION ||
+            selectedStatus == OrdenStatus.RECOLECCION_PARCIAL ||
+            order?.estado == OrdenStatus.RECOLECCION_REALIZADA
 }
 
 sealed interface FieldCollectionUiEvent {
     data object OnRetry : FieldCollectionUiEvent
     data class OnStatusSelected(val status: OrdenStatus) : FieldCollectionUiEvent
     data class OnQuantityActaChanged(val codigoArticulo: String, val quantity: Int?) : FieldCollectionUiEvent
+    data class OnQuantityActaInputChanged(val codigoArticulo: String, val rawInput: String) : FieldCollectionUiEvent
     data class OnAplicaProvenientesChanged(val applies: Boolean) : FieldCollectionUiEvent
     data object OnOpenAddProvenienteDialog : FieldCollectionUiEvent
+    data class OnOpenEditProvenienteDialog(val id: String) : FieldCollectionUiEvent
     data object OnDismissAddProvenienteDialog : FieldCollectionUiEvent
     data class OnProvenienteNitChanged(val value: String) : FieldCollectionUiEvent
     data class OnProvenienteRazonSocialChanged(val value: String) : FieldCollectionUiEvent
@@ -78,6 +93,8 @@ sealed interface FieldCollectionUiEvent {
     data class OnObservacionesCampoChanged(val value: String) : FieldCollectionUiEvent
     data class OnNombreResponsableChanged(val value: String) : FieldCollectionUiEvent
     data class OnIdentificacionResponsableChanged(val value: String) : FieldCollectionUiEvent
+    data class OnSignatureCaptured(val base64: String) : FieldCollectionUiEvent
+    data object OnSignatureCleared : FieldCollectionUiEvent
     data object OnSaveDraftClick : FieldCollectionUiEvent
     data object OnFinalizeClick : FieldCollectionUiEvent
     data object OnConfirmFinalize : FieldCollectionUiEvent

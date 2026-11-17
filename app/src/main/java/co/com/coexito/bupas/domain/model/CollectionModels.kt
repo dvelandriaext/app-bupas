@@ -16,7 +16,10 @@ data class FieldCollectionSubmission(
     val observacionesCampo: String,
     val nombreResponsableEntrega: String,
     val identificacionResponsableEntrega: String,
-    val finalizeCollection: Boolean
+    val finalizeCollection: Boolean,
+    val fechaHoraInicioAtencion: String? = null,
+    val fechaHoraFinalizacion: String? = null,
+    val firmaDigitalBase64: String? = null
 )
 
 /**
@@ -26,12 +29,18 @@ data class FieldCollectionSubmission(
 data class FieldCollectionValidationErrors(
     val detalleNovedadError: String? = null,
     val missingCantidadActaCodigos: Set<String> = emptySet(),
+    val invalidCantidadActaCodigos: Map<String, String> = emptyMap(),
+    val provenientesGateError: String? = null,
     val nombreResponsableError: String? = null,
-    val identificacionResponsableError: String? = null
+    val identificacionResponsableError: String? = null,
+    val firmaDigitalError: String? = null
 ) {
     val isValid: Boolean
         get() = detalleNovedadError == null &&
             missingCantidadActaCodigos.isEmpty() &&
+            invalidCantidadActaCodigos.isEmpty() &&
+            provenientesGateError == null &&
             nombreResponsableError == null &&
-            identificacionResponsableError == null
+            identificacionResponsableError == null &&
+            firmaDigitalError == null
 }

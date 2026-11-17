@@ -2,6 +2,7 @@ package co.com.coexito.bupas.data.remote.api
 
 import co.com.coexito.bupas.data.remote.dto.AssignedOrdersResponseDto
 import co.com.coexito.bupas.data.remote.dto.OrderDto
+import co.com.coexito.bupas.data.remote.dto.PrecioArticuloBupasDto
 import co.com.coexito.bupas.data.remote.dto.SaveFieldCollectionRequestDto
 import retrofit2.http.Body
 import retrofit2.http.GET
@@ -30,6 +31,11 @@ interface OrderApiService {
     suspend fun getOrderBySolicitud(
         @Path("solicitudId") solicitudId: String
     ): OrderDto
+
+    @GET("api/v1/mobile/clients/{nitCliente}/price-list")
+    suspend fun getClientPriceList(
+        @Path("nitCliente") nitCliente: String
+    ): List<PrecioArticuloBupasDto> = emptyList()
 
     @PUT("api/v1/mobile/orders/{solicitudId}/collection")
     suspend fun saveFieldCollection(

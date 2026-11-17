@@ -30,7 +30,10 @@ data class OrderDto(
     val detalleNovedad: String? = null,
     val observacionesCampo: String = "",
     val nombreResponsableEntrega: String = "",
-    val identificacionResponsableEntrega: String = ""
+    val identificacionResponsableEntrega: String = "",
+    val fechaHoraInicioAtencion: String? = null,
+    val fechaHoraFinalizacion: String? = null,
+    val firmaDigitalBase64: String? = null
 )
 
 @Serializable
@@ -43,7 +46,18 @@ data class SaveFieldCollectionRequestDto(
     val observacionesCampo: String = "",
     val nombreResponsableEntrega: String = "",
     val identificacionResponsableEntrega: String = "",
-    val finalizeCollection: Boolean = false
+    val finalizeCollection: Boolean = false,
+    val fechaHoraInicioAtencion: String? = null,
+    val fechaHoraFinalizacion: String? = null,
+    val firmaDigitalBase64: String? = null
+)
+
+@Serializable
+data class PrecioArticuloBupasDto(
+    val codigoArticulo: String,
+    val descripcion: String,
+    val pesoUnitarioKg: Double,
+    val valorCompraUnitario: Double
 )
 
 @Serializable

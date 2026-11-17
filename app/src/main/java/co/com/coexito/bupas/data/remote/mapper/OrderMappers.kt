@@ -4,6 +4,7 @@ import co.com.coexito.bupas.data.remote.dto.ArticuloBupasDto
 import co.com.coexito.bupas.data.remote.dto.ArticuloCantidadDto
 import co.com.coexito.bupas.data.remote.dto.AssignedOrdersResponseDto
 import co.com.coexito.bupas.data.remote.dto.OrderDto
+import co.com.coexito.bupas.data.remote.dto.PrecioArticuloBupasDto
 import co.com.coexito.bupas.data.remote.dto.SaveFieldCollectionRequestDto
 import co.com.coexito.bupas.data.remote.dto.TerceroProvenienteDto
 import co.com.coexito.bupas.domain.model.ArticuloBupas
@@ -11,6 +12,7 @@ import co.com.coexito.bupas.domain.model.AssignedOrdersResult
 import co.com.coexito.bupas.domain.model.FieldCollectionSubmission
 import co.com.coexito.bupas.domain.model.OrdenRecoleccion
 import co.com.coexito.bupas.domain.model.OrdenStatus
+import co.com.coexito.bupas.domain.model.PrecioArticuloBupas
 import co.com.coexito.bupas.domain.model.TerceroProveniente
 import co.com.coexito.bupas.domain.model.TipoBateriaProveniente
 
@@ -40,7 +42,10 @@ fun OrderDto.toDomain(): OrdenRecoleccion = OrdenRecoleccion(
     detalleNovedad = detalleNovedad,
     observacionesCampo = observacionesCampo,
     nombreResponsableEntrega = nombreResponsableEntrega,
-    identificacionResponsableEntrega = identificacionResponsableEntrega
+    identificacionResponsableEntrega = identificacionResponsableEntrega,
+    fechaHoraInicioAtencion = fechaHoraInicioAtencion,
+    fechaHoraFinalizacion = fechaHoraFinalizacion,
+    firmaDigitalBase64 = firmaDigitalBase64
 )
 
 fun FieldCollectionSubmission.toDto(): SaveFieldCollectionRequestDto = SaveFieldCollectionRequestDto(
@@ -52,7 +57,26 @@ fun FieldCollectionSubmission.toDto(): SaveFieldCollectionRequestDto = SaveField
     observacionesCampo = observacionesCampo,
     nombreResponsableEntrega = nombreResponsableEntrega,
     identificacionResponsableEntrega = identificacionResponsableEntrega,
-    finalizeCollection = finalizeCollection
+    finalizeCollection = finalizeCollection,
+    fechaHoraInicioAtencion = fechaHoraInicioAtencion,
+    fechaHoraFinalizacion = fechaHoraFinalizacion,
+    firmaDigitalBase64 = firmaDigitalBase64
+)
+
+fun PrecioArticuloBupasDto.toDomain(): PrecioArticuloBupas = PrecioArticuloBupas(
+    codigoArticulo = codigoArticulo,
+    descripcion = descripcion,
+    pesoUnitarioKg = pesoUnitarioKg,
+    valorCompraUnitario = valorCompraUnitario
+)
+
+fun ArticuloBupas.toDto(): ArticuloBupasDto = ArticuloBupasDto(
+    codigoArticulo = codigoArticulo,
+    descripcion = descripcion,
+    cantidadInicial = cantidadInicial,
+    cantidadActa = cantidadActa,
+    pesoUnitarioKg = pesoUnitarioKg,
+    valorCompraUnitario = valorCompraUnitario
 )
 
 fun TerceroProveniente.toDto(): TerceroProvenienteDto = TerceroProvenienteDto(
@@ -84,7 +108,7 @@ fun TerceroProvenienteDto.toDomain(): TerceroProveniente = TerceroProveniente(
     correoElectronico = correoElectronico
 )
 
-private fun parseOrdenStatus(rawStatus: String): OrdenStatus {
+internal fun parseOrdenStatus(rawStatus: String): OrdenStatus {
     return OrdenStatus.entries.firstOrNull {
         it.name.equals(rawStatus, ignoreCase = true) ||
             it.displayName.equals(rawStatus, ignoreCase = true)

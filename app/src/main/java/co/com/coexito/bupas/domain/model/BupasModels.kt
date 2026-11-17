@@ -49,6 +49,14 @@ enum class TipoBateriaProveniente(val label: String) {
 }
 
 @Immutable
+data class PrecioArticuloBupas(
+    val codigoArticulo: String,
+    val descripcion: String,
+    val pesoUnitarioKg: Double,
+    val valorCompraUnitario: Double
+)
+
+@Immutable
 data class ArticuloBupas(
     val codigoArticulo: String,
     val descripcion: String,
@@ -97,7 +105,10 @@ data class OrdenRecoleccion(
     val detalleNovedad: String? = null,
     val observacionesCampo: String = "",
     val nombreResponsableEntrega: String = "",
-    val identificacionResponsableEntrega: String = ""
+    val identificacionResponsableEntrega: String = "",
+    val fechaHoraInicioAtencion: String? = null,
+    val fechaHoraFinalizacion: String? = null,
+    val firmaDigitalBase64: String? = null
 ) {
     val totalUnidadesActa: Int
         get() = articulos.sumOf { it.cantidadActa ?: 0 }

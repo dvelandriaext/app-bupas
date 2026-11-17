@@ -96,7 +96,10 @@ fun BupasTextField(
             textStyle = MaterialTheme.typography.bodyLarge,
             shape = MaterialTheme.shapes.small,
             keyboardOptions = keyboardOptions,
-            colors = coeOutlinedTextFieldColors(isValid = isValid && !showError)
+            colors = coeOutlinedTextFieldColors(
+                isValid = isValid && !showError,
+                readOnly = readOnly
+            )
         )
         AnimatedVisibility(
             visible = showError && !errorMessage.isNullOrBlank(),
@@ -230,74 +233,109 @@ fun BupasOtpField(
 
 /**
  * Control numérico especializado para capturar "Cantidad Acta" por artículo BUPAS en campo (HU-006).
+ * Rechaza valores negativos o decimales sin recortar signos (`-`, `.`, `,`), propagando la entrada
+ * cruda cuando se provee [onRawQuantityChange] y mostrando estado visual de error en rojo (R2.3).
  */
 @Composable
 fun BupasQuantityActaField(
     quantityActa: Int?,
     onQuantityChange: (Int?) -> Unit,
     modifier: Modifier = Modifier,
+    onRawQuantityChange: ((String) -> Unit)? = null,
     readOnly: Boolean = false,
-    isError: Boolean = false
+    isError: Boolean = false,
+    errorMessage: String? = null
 ) {
-    Row(
-        modifier = modifier,
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(BupasTheme.spacing.xs)
-    ) {
-        if (!readOnly) {
-            FilledTonalIconButton(
-                onClick = {
-                    val current = quantityActa ?: 0
-                    onQuantityChange((current - 1).coerceAtLeast(0))
-                }
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Remove,
-                    contentDescription = "Disminuir Cantidad Acta"
+    val showError = isError || !errorMessage.isNullOrBlank()
+    var rawText by rememberSaveable(quantityActa) { mutableStateOf(quantityActa?.toString().orEmpty()) }
+    val applyStep: (Int) -> Unit = { nextQty ->
+        rawText = nextQty.toString()
+        onRawQuantityChange?.invoke(rawText) ?: onQuantityChange(nextQty)
+    }
+
+    Column(modifier = modifier, horizontalAlignment = Alignment.End) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(BupasTheme.spacing.xs)
+        ) {
+            if (!readOnly) {
+                QuantityStepButton(
+                    icon = Icons.Default.Remove,
+                    contentDescription = "Disminuir Cantidad Acta",
+                    onClick = { applyStep(((quantityActa ?: 0) - 1).coerceAtLeast(0)) }
+                )
+            }
+            OutlinedTextField(
+                value = if (readOnly) quantityActa?.toString().orEmpty() else rawText,
+                onValueChange = { raw ->
+                    rawText = raw
+                    handleQuantityTextInput(raw, onRawQuantityChange, onQuantityChange)
+                },
+                modifier = Modifier.width(88.dp),
+                readOnly = readOnly,
+                singleLine = true,
+                isError = showError,
+                placeholder = {
+                    Text(
+                        text = "0",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.fillMaxWidth(),
+                        textAlign = TextAlign.Center
+                    )
+                },
+                textStyle = MaterialTheme.typography.titleMedium.copy(textAlign = TextAlign.Center),
+                shape = MaterialTheme.shapes.small,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                colors = coeOutlinedTextFieldColors(isValid = false, readOnly = readOnly)
+            )
+            if (!readOnly) {
+                QuantityStepButton(
+                    icon = Icons.Default.Add,
+                    contentDescription = "Aumentar Cantidad Acta",
+                    onClick = { applyStep((quantityActa ?: 0) + 1) }
                 )
             }
         }
+        AnimatedVisibility(
+            visible = showError && !errorMessage.isNullOrBlank(),
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically()
+        ) {
+            CoeInputErrorText(message = errorMessage.orEmpty())
+        }
+    }
+}
 
-        OutlinedTextField(
-            value = quantityActa?.toString() ?: "",
-            onValueChange = { raw ->
-                if (raw.isBlank()) {
-                    onQuantityChange(null)
-                } else {
-                    raw.filter { it.isDigit() }.toIntOrNull()?.let(onQuantityChange)
-                }
-            },
-            modifier = Modifier.width(88.dp),
-            readOnly = readOnly,
-            singleLine = true,
-            isError = isError,
-            placeholder = {
-                Text(
-                    text = "0",
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.fillMaxWidth(),
-                    textAlign = TextAlign.Center
-                )
-            },
-            textStyle = MaterialTheme.typography.titleMedium.copy(textAlign = TextAlign.Center),
-            shape = MaterialTheme.shapes.small,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            colors = coeOutlinedTextFieldColors(isValid = false)
+@Composable
+private fun QuantityStepButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit
+) {
+    FilledTonalIconButton(
+        onClick = onClick,
+        modifier = Modifier.defaultMinSize(
+            minWidth = BupasTheme.spacing.minTouchTarget,
+            minHeight = BupasTheme.spacing.minTouchTarget
         )
+    ) {
+        Icon(imageVector = icon, contentDescription = contentDescription)
+    }
+}
 
-        if (!readOnly) {
-            FilledTonalIconButton(
-                onClick = {
-                    val current = quantityActa ?: 0
-                    onQuantityChange(current + 1)
-                }
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "Aumentar Cantidad Acta"
-                )
-            }
-        }
+private fun handleQuantityTextInput(
+    raw: String,
+    onRawQuantityChange: ((String) -> Unit)?,
+    onQuantityChange: (Int?) -> Unit
+) {
+    if (onRawQuantityChange != null) {
+        onRawQuantityChange(raw)
+        return
+    }
+    if (raw.isEmpty()) {
+        onQuantityChange(null)
+    } else if (raw.all { it.isDigit() }) {
+        raw.toIntOrNull()?.let(onQuantityChange)
     }
 }
 
@@ -312,16 +350,32 @@ private fun CoeInputErrorText(message: String) {
 }
 
 @Composable
-private fun coeOutlinedTextFieldColors(isValid: Boolean): TextFieldColors {
+private fun coeOutlinedTextFieldColors(
+    isValid: Boolean,
+    readOnly: Boolean = false
+): TextFieldColors {
     val validBorderColor = BupasTheme.extendedColors.successAccent
-    val unfocusedBorder = if (isValid) validBorderColor else MaterialTheme.colorScheme.outline
-    val focusedBorder = if (isValid) validBorderColor else MaterialTheme.colorScheme.primary
+    val containerColor = if (readOnly) {
+        BupasTheme.extendedColors.readOnlySurface
+    } else {
+        MaterialTheme.colorScheme.surface
+    }
+    val unfocusedBorder = when {
+        readOnly -> BupasTheme.extendedColors.borderDisabled
+        isValid -> validBorderColor
+        else -> MaterialTheme.colorScheme.outline
+    }
+    val focusedBorder = when {
+        readOnly -> BupasTheme.extendedColors.borderDisabled
+        isValid -> validBorderColor
+        else -> MaterialTheme.colorScheme.primary
+    }
 
     return OutlinedTextFieldDefaults.colors(
-        focusedContainerColor = MaterialTheme.colorScheme.surface,
-        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-        disabledContainerColor = MaterialTheme.colorScheme.surface,
-        errorContainerColor = MaterialTheme.colorScheme.surface,
+        focusedContainerColor = containerColor,
+        unfocusedContainerColor = containerColor,
+        disabledContainerColor = BupasTheme.extendedColors.readOnlySurface,
+        errorContainerColor = containerColor,
         focusedTextColor = MaterialTheme.colorScheme.onSurface,
         unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
         disabledTextColor = MaterialTheme.colorScheme.outline,

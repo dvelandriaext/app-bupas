@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -94,15 +95,22 @@ private fun FieldCollectionContent(
     onEvent: (FieldCollectionUiEvent) -> Unit
 ) {
     val order = uiState.order ?: return
+    val showPhysicalSections = uiState.isCollectionSectionEnabled && !uiState.isNoRecolectadaSelected
+    val showActions = !uiState.isReadOnly && (showPhysicalSections || uiState.isNoRecolectadaSelected)
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(BupasTheme.spacing.md),
         verticalArrangement = Arrangement.spacedBy(BupasTheme.spacing.md)
     ) {
-        item { CollectionClientSummaryCard(order = order) }
+        item { CollectionGeneralOrderSection(order = order) }
+        item { CollectionClientInfoSection(order = order) }
         item {
             CollectionStatusSection(
                 selectedStatus = uiState.selectedStatus,
+                fechaHoraInicioAtencion = uiState.fechaHoraInicioAtencion,
+                fechaHoraFinalizacion = uiState.fechaHoraFinalizacion,
+                isOfflineDraftSaved = uiState.isOfflineDraftSaved,
                 isReadOnly = uiState.isReadOnly,
                 detalleNovedad = uiState.detalleNovedad,
                 detalleNovedadError = uiState.validationErrors.detalleNovedadError,
@@ -110,51 +118,74 @@ private fun FieldCollectionContent(
                 onDetalleNovedadChanged = { onEvent(FieldCollectionUiEvent.OnDetalleNovedadChanged(it)) }
             )
         }
-        if (!uiState.isNoRecolectadaSelected) {
+        if (showPhysicalSections) {
+            physicalCollectionItems(uiState = uiState, order = order, onEvent = onEvent)
+        }
+        if (showActions) {
             item {
-                CollectionArticlesSection(
-                    articulos = uiState.articulos,
-                    totalsSummary = uiState.totalsSummary,
-                    missingCodigos = uiState.validationErrors.missingCantidadActaCodigos,
+                CollectionActionsSection(
+                    isNoRecolectada = uiState.isNoRecolectadaSelected,
                     isReadOnly = uiState.isReadOnly,
-                    onQuantityChanged = { codigo, qty ->
-                        onEvent(FieldCollectionUiEvent.OnQuantityActaChanged(codigo, qty))
-                    }
-                )
-            }
-            item {
-                CollectionProvenientesSection(
-                    aplicaProvenientes = uiState.aplicaProvenientes,
-                    provenientes = uiState.provenientes,
-                    isReadOnly = uiState.isReadOnly,
-                    onAplicaChanged = { onEvent(FieldCollectionUiEvent.OnAplicaProvenientesChanged(it)) },
-                    onAddClick = { onEvent(FieldCollectionUiEvent.OnOpenAddProvenienteDialog) },
-                    onRemoveClick = { onEvent(FieldCollectionUiEvent.OnRemoveProveniente(it)) }
-                )
-            }
-            item {
-                CollectionResponsibleSection(
-                    nombreResponsable = uiState.nombreResponsableEntrega,
-                    identificacionResponsable = uiState.identificacionResponsableEntrega,
-                    observacionesCampo = uiState.observacionesCampo,
-                    nombreError = uiState.validationErrors.nombreResponsableError,
-                    identificacionError = uiState.validationErrors.identificacionResponsableError,
-                    isReadOnly = uiState.isReadOnly,
-                    onNombreChanged = { onEvent(FieldCollectionUiEvent.OnNombreResponsableChanged(it)) },
-                    onIdentificacionChanged = { onEvent(FieldCollectionUiEvent.OnIdentificacionResponsableChanged(it)) },
-                    onObservacionesChanged = { onEvent(FieldCollectionUiEvent.OnObservacionesCampoChanged(it)) }
+                    isSaving = uiState.isSaving,
+                    onSaveDraftClick = { onEvent(FieldCollectionUiEvent.OnSaveDraftClick) },
+                    onFinalizeClick = { onEvent(FieldCollectionUiEvent.OnFinalizeClick) }
                 )
             }
         }
-        item {
-            CollectionActionsSection(
-                isNoRecolectada = uiState.isNoRecolectadaSelected,
-                isReadOnly = uiState.isReadOnly,
-                isSaving = uiState.isSaving,
-                onSaveDraftClick = { onEvent(FieldCollectionUiEvent.OnSaveDraftClick) },
-                onFinalizeClick = { onEvent(FieldCollectionUiEvent.OnFinalizeClick) }
-            )
-        }
+    }
+}
+
+private fun LazyListScope.physicalCollectionItems(
+    uiState: FieldCollectionUiState,
+    order: OrdenRecoleccion,
+    onEvent: (FieldCollectionUiEvent) -> Unit
+) {
+    item {
+        CollectionArticlesSection(
+            articulos = uiState.articulos,
+            totalsSummary = uiState.totalsSummary,
+            missingCodigos = uiState.validationErrors.missingCantidadActaCodigos,
+            invalidCodigos = uiState.validationErrors.invalidCantidadActaCodigos,
+            isReadOnly = uiState.isReadOnly,
+            onQuantityChanged = { codigo, qty ->
+                onEvent(FieldCollectionUiEvent.OnQuantityActaChanged(codigo, qty))
+            },
+            onRawQuantityChanged = { codigo, raw ->
+                onEvent(FieldCollectionUiEvent.OnQuantityActaInputChanged(codigo, raw))
+            }
+        )
+    }
+    item {
+        CollectionProvenientesSection(
+            aplicaProvenientes = uiState.aplicaProvenientes,
+            provenientes = uiState.provenientes,
+            provenientesGateError = uiState.validationErrors.provenientesGateError,
+            isReadOnly = uiState.isReadOnly,
+            onAplicaChanged = { onEvent(FieldCollectionUiEvent.OnAplicaProvenientesChanged(it)) },
+            onAddClick = { onEvent(FieldCollectionUiEvent.OnOpenAddProvenienteDialog) },
+            onEditClick = { onEvent(FieldCollectionUiEvent.OnOpenEditProvenienteDialog(it)) },
+            onRemoveClick = { onEvent(FieldCollectionUiEvent.OnRemoveProveniente(it)) }
+        )
+    }
+    item {
+        CollectionConfirmationSection(
+            nombreResponsable = uiState.nombreResponsableEntrega,
+            identificacionResponsable = uiState.identificacionResponsableEntrega,
+            observacionesCampo = uiState.observacionesCampo,
+            firmaDigitalBase64 = uiState.firmaDigitalBase64,
+            numeroActaGenerada = order.numeroActaGenerada,
+            nombreError = uiState.validationErrors.nombreResponsableError,
+            identificacionError = uiState.validationErrors.identificacionResponsableError,
+            firmaError = uiState.validationErrors.firmaDigitalError,
+            isReadOnly = uiState.isReadOnly,
+            onNombreChanged = { onEvent(FieldCollectionUiEvent.OnNombreResponsableChanged(it)) },
+            onIdentificacionChanged = {
+                onEvent(FieldCollectionUiEvent.OnIdentificacionResponsableChanged(it))
+            },
+            onObservacionesChanged = { onEvent(FieldCollectionUiEvent.OnObservacionesCampoChanged(it)) },
+            onSignatureCaptured = { onEvent(FieldCollectionUiEvent.OnSignatureCaptured(it)) },
+            onSignatureCleared = { onEvent(FieldCollectionUiEvent.OnSignatureCleared) }
+        )
     }
 }
 
@@ -182,7 +213,7 @@ private fun FieldCollectionDialogs(
     }
 
     if (uiState.showAddProvenienteDialog) {
-        AddProvenienteDialog(
+        ProvenienteFormDialog(
             formState = uiState.provenienteForm,
             onEvent = onEvent
         )
@@ -250,6 +281,14 @@ private fun FieldCollectionScreenPreview() {
             cantidadActa = 12,
             pesoUnitarioKg = 14.5,
             valorCompraUnitario = 55000.0
+        ),
+        ArticuloBupas(
+            codigoArticulo = "BUP-AUTO-34",
+            descripcion = "Batería Usada Auto 34",
+            cantidadInicial = 0,
+            cantidadActa = 0,
+            pesoUnitarioKg = 16.0,
+            valorCompraUnitario = 62000.0
         )
     )
     BupasTheme {
@@ -270,9 +309,11 @@ private fun FieldCollectionScreenPreview() {
                     tipoDevolucion = "POS-Posconsumo",
                     observacionesIniciales = "Recoger en bodega posterior.",
                     estado = OrdenStatus.EN_ATENCION,
+                    fechaHoraInicioAtencion = "2026-11-15 09:30:00",
                     articulos = articulos
                 ),
                 selectedStatus = OrdenStatus.EN_ATENCION,
+                fechaHoraInicioAtencion = "2026-11-15 09:30:00",
                 articulos = articulos,
                 totalsSummary = CollectionTotalsSummary(
                     totalUnidades = 12,
