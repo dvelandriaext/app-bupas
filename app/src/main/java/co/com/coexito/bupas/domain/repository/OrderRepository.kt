@@ -2,7 +2,10 @@ package co.com.coexito.bupas.domain.repository
 
 import co.com.coexito.bupas.domain.model.ActaRespel
 import co.com.coexito.bupas.domain.model.AssignedOrdersResult
+import co.com.coexito.bupas.domain.model.EstadoEnvioActa
+import co.com.coexito.bupas.domain.model.EstadoGeneracionActa
 import co.com.coexito.bupas.domain.model.FieldCollectionSubmission
+import co.com.coexito.bupas.domain.model.OfflineSyncSummary
 import co.com.coexito.bupas.domain.model.OrdenRecoleccion
 import co.com.coexito.bupas.domain.model.OrdenStatus
 import co.com.coexito.bupas.domain.model.OrderSearchFilter
@@ -33,6 +36,15 @@ interface OrderRepository {
         numeroSolicitud: String
     ): Boolean = false
 
+    suspend fun getPendingSyncCount(): Int = 0
+
+    suspend fun syncPendingCollections(): Result<OfflineSyncSummary> =
+        Result.success(OfflineSyncSummary())
+
+    fun isSimulatedOfflineMode(): Boolean = false
+
+    fun setSimulatedOfflineMode(offline: Boolean) = Unit
+
     suspend fun getActaBySolicitud(
         numeroSolicitud: String
     ): Result<ActaRespel> = Result.failure(
@@ -41,5 +53,12 @@ interface OrderRepository {
 
     suspend fun retryActaContingency(
         numeroSolicitud: String
+    ): Result<ActaRespel> = getActaBySolicitud(numeroSolicitud)
+
+    suspend fun simulateActaContingencyState(
+        numeroSolicitud: String,
+        estadoGeneracion: EstadoGeneracionActa,
+        estadoEnvio: EstadoEnvioActa,
+        detalleError: String?
     ): Result<ActaRespel> = getActaBySolicitud(numeroSolicitud)
 }

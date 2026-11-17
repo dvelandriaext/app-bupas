@@ -30,5 +30,7 @@ sealed interface ActaRespelUiEvent {
     data object OnViewActaPdfClick : ActaRespelUiEvent
     data object OnDownloadPdfClick : ActaRespelUiEvent
     data object OnRetryContingencyClick : ActaRespelUiEvent
+    data object OnSimulateGenerationErrorClick : ActaRespelUiEvent
+    data object OnSimulateEmailErrorClick : ActaRespelUiEvent
     data object OnDismissFeedbackAlert : ActaRespelUiEvent
 }

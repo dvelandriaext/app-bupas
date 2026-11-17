@@ -67,7 +67,28 @@ fun BupasOrderCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                BupasStatusBadge(status = order.estado)
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(BupasTheme.spacing.xs)
+                ) {
+                    BupasStatusBadge(status = order.estado)
+                    if (order.isPendingSync) {
+                        Surface(
+                            color = BupasTheme.extendedColors.enAtencion.containerColor,
+                            contentColor = BupasTheme.extendedColors.enAtencion.contentColor,
+                            shape = MaterialTheme.shapes.small
+                        ) {
+                            Text(
+                                text = "Pendiente sincronizar",
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(
+                                    horizontal = BupasTheme.spacing.sm,
+                                    vertical = BupasTheme.spacing.xxs
+                                )
+                            )
+                        }
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(BupasTheme.spacing.sm))

@@ -12,14 +12,17 @@ import co.com.coexito.bupas.data.remote.mapper.parseOrdenStatus
 import co.com.coexito.bupas.domain.model.EstadoEnvioActa
 import co.com.coexito.bupas.domain.model.EstadoGeneracionActa
 import co.com.coexito.bupas.domain.model.OrdenStatus
+import java.io.IOException
 import kotlinx.coroutines.delay
 
 /**
- * Implementación simulada de [OrderApiService] para HU-005 y HU-006.
- * Simula latencia de red, filtrado en servidor, persistencia en sesión y generación de número de acta.
+ * Implementación simulada de [OrderApiService] para HU-005, HU-006 y HU-007.
+ * Simula latencia de red, modo sin conexión para Demo, filtrado en servidor,
+ * persistencia en sesión y generación de número de acta.
  */
 class FakeOrderApiService(
-    private val networkDelayMillis: Long = DEFAULT_NETWORK_DELAY_MS
+    private val networkDelayMillis: Long = DEFAULT_NETWORK_DELAY_MS,
+    @Volatile var isOfflineSimulated: Boolean = false
 ) : OrderApiService {
 
     private val ordersCatalog: MutableList<OrderDto> = buildDummyCatalog().toMutableList()
@@ -33,9 +36,7 @@ class FakeOrderApiService(
         numeroSolicitud: String?,
         identificadorOm: String?
     ): AssignedOrdersResponseDto {
-        if (networkDelayMillis > 0L) {
-            delay(networkDelayMillis)
-        }
+        simulateNetworkAccess()
 
         val filtered = ordersCatalog
             .filter { order ->
@@ -54,18 +55,14 @@ class FakeOrderApiService(
     }
 
     override suspend fun getOrderBySolicitud(solicitudId: String): OrderDto {
-        if (networkDelayMillis > 0L) {
-            delay(networkDelayMillis)
-        }
+        simulateNetworkAccess()
         return ordersCatalog.firstOrNull {
             it.numeroSolicitud.equals(solicitudId, ignoreCase = true)
         } ?: throw NoSuchElementException("No se encontró la orden $solicitudId")
     }
 
     override suspend fun getClientPriceList(nitCliente: String): List<PrecioArticuloBupasDto> {
-        if (networkDelayMillis > 0L) {
-            delay(networkDelayMillis)
-        }
+        simulateNetworkAccess()
         return clientPriceCatalog
     }
 
@@ -73,9 +70,7 @@ class FakeOrderApiService(
         solicitudId: String,
         request: SaveFieldCollectionRequestDto
     ): OrderDto {
-        if (networkDelayMillis > 0L) {
-            delay(networkDelayMillis)
-        }
+        simulateNetworkAccess()
         val index = ordersCatalog.indexOfFirst {
             it.numeroSolicitud.equals(solicitudId, ignoreCase = true)
         }
@@ -101,9 +96,7 @@ class FakeOrderApiService(
     }
 
     override suspend fun retryActaContingency(solicitudId: String): OrderDto {
-        if (networkDelayMillis > 0L) {
-            delay(networkDelayMillis)
-        }
+        simulateNetworkAccess()
         val index = ordersCatalog.indexOfFirst {
             it.numeroSolicitud.equals(solicitudId, ignoreCase = true)
         }
@@ -126,7 +119,7 @@ class FakeOrderApiService(
         solicitudId: String,
         estadoGeneracion: EstadoGeneracionActa,
         estadoEnvio: EstadoEnvioActa,
-        detalleError: String
+        detalleError: String?
     ) {
         val index = ordersCatalog.indexOfFirst {
             it.numeroSolicitud.equals(solicitudId, ignoreCase = true)
@@ -137,6 +130,15 @@ class FakeOrderApiService(
                 estadoEnvioActa = estadoEnvio.name,
                 detalleErrorActa = detalleError
             )
+        }
+    }
+
+    private suspend fun simulateNetworkAccess() {
+        if (isOfflineSimulated) {
+            throw IOException("Modo sin conexión activo (Simulación Demo BUPAS).")
+        }
+        if (networkDelayMillis > 0L) {
+            delay(networkDelayMillis)
         }
     }
 
@@ -501,7 +503,8 @@ private fun buildDummyCatalog(): List<OrderDto> = listOf(
         correoPrincipalCliente = "logistica@electricapacifico.com.co",
         correoAlternoCliente = null,
         estadoGeneracionActa = EstadoGeneracionActa.GENERADA.name,
-        estadoEnvioActa = EstadoEnvioActa.ENVIADA.name,
+        estadoEnvioActa = EstadoEnvioActa.ERROR_ENVIO.name,
+        detalleErrorActa = "Timeout SMTP al conectar con servidor de correo corporativo (Reintentos programados: 2h, 4h y 6h).",
         articulos = listOf(
             ArticuloBupasDto(
                 codigoArticulo = "BUP-AUTO-42",

@@ -1,6 +1,8 @@
 package co.com.coexito.bupas.domain.usecase.certificate
 
 import co.com.coexito.bupas.domain.model.ActaRespel
+import co.com.coexito.bupas.domain.model.EstadoEnvioActa
+import co.com.coexito.bupas.domain.model.EstadoGeneracionActa
 import co.com.coexito.bupas.domain.repository.OrderRepository
 import javax.inject.Inject
 
@@ -13,5 +15,19 @@ class RetryActaContingencyUseCase @Inject constructor(
 ) {
     suspend operator fun invoke(numeroSolicitud: String): Result<ActaRespel> {
         return orderRepository.retryActaContingency(numeroSolicitud)
+    }
+
+    suspend fun simulateContingencyState(
+        numeroSolicitud: String,
+        estadoGeneracion: EstadoGeneracionActa,
+        estadoEnvio: EstadoEnvioActa,
+        detalleError: String?
+    ): Result<ActaRespel> {
+        return orderRepository.simulateActaContingencyState(
+            numeroSolicitud = numeroSolicitud,
+            estadoGeneracion = estadoGeneracion,
+            estadoEnvio = estadoEnvio,
+            detalleError = detalleError
+        )
     }
 }

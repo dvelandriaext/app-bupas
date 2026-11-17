@@ -3,6 +3,8 @@ package co.com.coexito.bupas.presentation.certificate
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import co.com.coexito.bupas.domain.model.EstadoEnvioActa
+import co.com.coexito.bupas.domain.model.EstadoGeneracionActa
 import co.com.coexito.bupas.domain.usecase.certificate.GetActaRespelUseCase
 import co.com.coexito.bupas.domain.usecase.certificate.RetryActaContingencyUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -39,6 +41,16 @@ class ActaRespelViewModel @Inject constructor(
             ActaRespelUiEvent.OnViewActaPdfClick -> handleViewPdfClick()
             ActaRespelUiEvent.OnDownloadPdfClick -> handleDownloadPdfClick()
             ActaRespelUiEvent.OnRetryContingencyClick -> executeContingencyRetry()
+            ActaRespelUiEvent.OnSimulateGenerationErrorClick -> simulateContingency(
+                estadoGeneracion = EstadoGeneracionActa.ERROR_GENERACION,
+                estadoEnvio = EstadoEnvioActa.ERROR_ENVIO,
+                detalleError = "Fallo simulado al renderizar y firmar plantilla PDF en servicio documental (CA 3)."
+            )
+            ActaRespelUiEvent.OnSimulateEmailErrorClick -> simulateContingency(
+                estadoGeneracion = EstadoGeneracionActa.GENERADA,
+                estadoEnvio = EstadoEnvioActa.ERROR_ENVIO,
+                detalleError = "Timeout SMTP al conectar con servidor de correo (Reintentos programados: 2h, 4h y 6h - CA 2)."
+            )
             ActaRespelUiEvent.OnDismissFeedbackAlert -> dismissFeedbackAlert()
         }
     }
@@ -135,6 +147,31 @@ class ActaRespelViewModel @Inject constructor(
                         )
                     }
                 }
+        }
+    }
+
+    private fun simulateContingency(
+        estadoGeneracion: EstadoGeneracionActa,
+        estadoEnvio: EstadoEnvioActa,
+        detalleError: String
+    ) {
+        if (numeroSolicitud.isBlank()) return
+        viewModelScope.launch {
+            retryActaContingencyUseCase.simulateContingencyState(
+                numeroSolicitud = numeroSolicitud,
+                estadoGeneracion = estadoGeneracion,
+                estadoEnvio = estadoEnvio,
+                detalleError = detalleError
+            ).onSuccess { simulatedActa ->
+                _uiState.update {
+                    it.copy(
+                        acta = simulatedActa,
+                        isPdfDocumentVisible = simulatedActa.canViewPdf,
+                        feedbackAlertTitle = null,
+                        feedbackAlertMessage = null
+                    )
+                }
+            }
         }
     }
 

@@ -490,6 +490,8 @@ class FieldCollectionViewModel @Inject constructor(
     }
 
     private fun buildSuccessAlert(order: OrdenRecoleccion, finalize: Boolean, hasOfflineDraft: Boolean): Pair<String, String> = when {
+        hasOfflineDraft && (finalize || order.estado.isReadOnlyLocked) ->
+            "Cierre guardado sin conexión" to "La orden ${order.numeroSolicitud} quedó cerrada en modo solo lectura (${order.estado.displayName}) bajo estado PENDING_SYNC. Se sincronizará con el servidor y emitirá el Acta Respel al recuperar conexión."
         hasOfflineDraft ->
             "Avance guardado localmente" to "Sin conexión a internet. Los datos de la orden ${order.numeroSolicitud} se guardaron localmente en el dispositivo."
         order.estado == OrdenStatus.NO_RECOLECTADA ->

@@ -117,7 +117,8 @@ data class OrdenRecoleccion(
     val placaVehiculo: String = "WXY-482",
     val estadoGeneracionActa: EstadoGeneracionActa? = null,
     val estadoEnvioActa: EstadoEnvioActa? = null,
-    val detalleErrorActa: String? = null
+    val detalleErrorActa: String? = null,
+    val isPendingSync: Boolean = false
 ) {
     val totalUnidadesActa: Int
         get() = articulos.sumOf { it.cantidadActa ?: 0 }

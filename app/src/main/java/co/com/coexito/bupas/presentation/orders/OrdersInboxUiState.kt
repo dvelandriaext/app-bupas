@@ -15,7 +15,11 @@ data class OrdersInboxUiState(
     val isFilterSheetVisible: Boolean = false,
     val isLoading: Boolean = true,
     val errorMessage: String? = null,
-    val selectedActaPreview: OrdenRecoleccion? = null
+    val selectedActaPreview: OrdenRecoleccion? = null,
+    val isOfflineMode: Boolean = false,
+    val pendingSyncCount: Int = 0,
+    val isSyncingPending: Boolean = false,
+    val syncFeedbackMessage: String? = null
 )
 
 sealed interface OrdersInboxUiEvent {
@@ -33,6 +37,9 @@ sealed interface OrdersInboxUiEvent {
     data class OnOrderDetailClick(val numeroSolicitud: String) : OrdersInboxUiEvent
     data class OnViewActaClick(val order: OrdenRecoleccion) : OrdersInboxUiEvent
     data object OnDismissActaPreview : OrdersInboxUiEvent
+    data class OnToggleOfflineMode(val offline: Boolean) : OrdersInboxUiEvent
+    data object OnSyncPendingClick : OrdersInboxUiEvent
+    data object OnDismissSyncFeedback : OrdersInboxUiEvent
 }
 
 sealed interface OrdersInboxNavigationEffect {

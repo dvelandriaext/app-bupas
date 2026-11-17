@@ -4,6 +4,7 @@ import co.com.coexito.bupas.core.di.IoDispatcher
 import co.com.coexito.bupas.data.local.FieldCollectionLocalDataSource
 import co.com.coexito.bupas.data.local.InMemoryFieldCollectionLocalDataSource
 import co.com.coexito.bupas.data.local.StoredFieldCollectionDraftDto
+import co.com.coexito.bupas.data.remote.FakeOrderApiService
 import co.com.coexito.bupas.data.remote.api.OrderApiService
 import co.com.coexito.bupas.data.remote.dto.ArticuloCantidadDto
 import co.com.coexito.bupas.data.remote.dto.OrderDto
@@ -13,7 +14,10 @@ import co.com.coexito.bupas.data.remote.mapper.toDomain
 import co.com.coexito.bupas.data.remote.mapper.toDto
 import co.com.coexito.bupas.domain.model.ActaRespel
 import co.com.coexito.bupas.domain.model.AssignedOrdersResult
+import co.com.coexito.bupas.domain.model.EstadoEnvioActa
+import co.com.coexito.bupas.domain.model.EstadoGeneracionActa
 import co.com.coexito.bupas.domain.model.FieldCollectionSubmission
+import co.com.coexito.bupas.domain.model.OfflineSyncSummary
 import co.com.coexito.bupas.domain.model.OrdenRecoleccion
 import co.com.coexito.bupas.domain.model.OrdenStatus
 import co.com.coexito.bupas.domain.model.OrderSearchFilter
@@ -40,20 +44,17 @@ class OrderRepositoryImpl @Inject constructor(
         ioDispatcher = ioDispatcher
     )
 
+    private val buildActaRespelUseCase = BuildActaRespelUseCase()
+
     override suspend fun getAssignedOrders(
         filter: OrderSearchFilter
     ): Result<AssignedOrdersResult> = withContext(ioDispatcher) {
         runCatching {
-            val response = orderApiService.getAssignedOrders(
-                startDate = filter.startDate,
-                endDate = filter.endDate,
-                status = filter.status?.name,
-                clientQuery = filter.clientQuery.takeIf { it.isNotBlank() },
-                numeroSolicitud = filter.numeroSolicitud.takeIf { it.isNotBlank() },
-                identificadorOm = filter.identificadorOm.takeIf { it.isNotBlank() }
-            )
-            response.orders.forEach { localDataSource.cacheOrder(it) }
-            response.toDomain()
+            try {
+                fetchRemoteAndMergeOrders(filter)
+            } catch (ioError: IOException) {
+                resolveAssignedOrdersFromLocalCache(filter, ioError)
+            }
         }
     }
 
@@ -61,7 +62,9 @@ class OrderRepositoryImpl @Inject constructor(
         numeroSolicitud: String
     ): Result<OrdenRecoleccion> = withContext(ioDispatcher) {
         runCatching {
-            fetchAndResolveOrder(numeroSolicitud).toDomain()
+            val resolved = fetchAndResolveOrder(numeroSolicitud)
+            val isPending = localDataSource.getDraft(numeroSolicitud)?.pendingSync == true
+            resolved.toDomain(isPendingSync = isPending)
         }
     }
 
@@ -129,14 +132,12 @@ class OrderRepositoryImpl @Inject constructor(
                 )
                 localDataSource.clearDraft(submission.numeroSolicitud)
                 localDataSource.cacheOrder(updated)
-                updated.toDomain()
-            } catch (ioError: IOException) {
-                handleOfflineSaveFailure(submission, requestDto, baselineOrder, ioError)
+                updated.toDomain(isPendingSync = false)
+            } catch (_: IOException) {
+                handleOfflineSaveFailure(submission, requestDto, baselineOrder)
             }
         }
     }
-
-    private val buildActaRespelUseCase = BuildActaRespelUseCase()
 
     override suspend fun hasPendingOfflineDraft(
         numeroSolicitud: String
@@ -144,11 +145,31 @@ class OrderRepositoryImpl @Inject constructor(
         localDataSource.getDraft(numeroSolicitud)?.pendingSync == true
     }
 
+    override suspend fun getPendingSyncCount(): Int = withContext(ioDispatcher) {
+        localDataSource.getAllPendingDrafts().size
+    }
+
+    override suspend fun syncPendingCollections(): Result<OfflineSyncSummary> =
+        withContext(ioDispatcher) {
+            runCatching {
+                executeOutboxFlush()
+            }
+        }
+
+    override fun isSimulatedOfflineMode(): Boolean =
+        (orderApiService as? FakeOrderApiService)?.isOfflineSimulated ?: false
+
+    override fun setSimulatedOfflineMode(offline: Boolean) {
+        (orderApiService as? FakeOrderApiService)?.isOfflineSimulated = offline
+    }
+
     override suspend fun getActaBySolicitud(
         numeroSolicitud: String
     ): Result<ActaRespel> = withContext(ioDispatcher) {
         runCatching {
-            val order = fetchAndResolveOrder(numeroSolicitud).toDomain()
+            val resolved = fetchAndResolveOrder(numeroSolicitud)
+            val isPending = localDataSource.getDraft(numeroSolicitud)?.pendingSync == true
+            val order = resolved.toDomain(isPendingSync = isPending)
             buildActaRespelUseCase(order)
                 ?: throw IllegalStateException(
                     "La orden ${order.numeroSolicitud} no cuenta con Acta Respel emitida (requiere Recolección Realizada con cantidades > 0)."
@@ -170,6 +191,133 @@ class OrderRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun simulateActaContingencyState(
+        numeroSolicitud: String,
+        estadoGeneracion: EstadoGeneracionActa,
+        estadoEnvio: EstadoEnvioActa,
+        detalleError: String?
+    ): Result<ActaRespel> = withContext(ioDispatcher) {
+        runCatching {
+            (orderApiService as? FakeOrderApiService)?.simulateActaContingencyState(
+                solicitudId = numeroSolicitud,
+                estadoGeneracion = estadoGeneracion,
+                estadoEnvio = estadoEnvio,
+                detalleError = detalleError
+            )
+            val updatedDto = orderApiService.getOrderBySolicitud(numeroSolicitud)
+            localDataSource.cacheOrder(updatedDto)
+            buildActaRespelUseCase(updatedDto.toDomain())
+                ?: throw IllegalStateException("No se encontró Acta Respel para $numeroSolicitud")
+        }
+    }
+
+    private suspend fun fetchRemoteAndMergeOrders(
+        filter: OrderSearchFilter
+    ): AssignedOrdersResult {
+        val fullRemoteResponse = orderApiService.getAssignedOrders()
+        fullRemoteResponse.orders.forEach { localDataSource.cacheOrder(it) }
+        preloadClientPriceLists(fullRemoteResponse.orders)
+
+        val resolvedOrders = fullRemoteResponse.orders.map { remoteDto ->
+            val resolvedDto = resolveOrderWithLocalDraft(remoteDto)
+            val isPending = localDataSource.getDraft(remoteDto.numeroSolicitud)?.pendingSync == true
+            resolvedDto.toDomain(isPendingSync = isPending)
+        }
+        val filtered = filterAndSortDomainOrders(resolvedOrders, filter)
+        return AssignedOrdersResult(
+            orders = filtered,
+            totalCount = fullRemoteResponse.totalCount
+        )
+    }
+
+    private suspend fun preloadClientPriceLists(orders: List<OrderDto>) {
+        val activeNits = orders
+            .filter { !parseOrdenStatus(it.estado).isReadOnlyLocked }
+            .map { it.nitCliente.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+
+        for (nit in activeNits) {
+            if (localDataSource.getCachedClientPriceList(nit) == null) {
+                runCatching {
+                    val prices = orderApiService.getClientPriceList(nit)
+                    localDataSource.cacheClientPriceList(nit, prices)
+                }
+            }
+        }
+    }
+
+    private suspend fun resolveAssignedOrdersFromLocalCache(
+        filter: OrderSearchFilter,
+        ioError: IOException
+    ): AssignedOrdersResult {
+        val cachedOrders = localDataSource.getAllCachedOrders()
+        if (cachedOrders.isEmpty()) {
+            throw ioError
+        }
+        val resolvedOrders = cachedOrders.map { cachedDto ->
+            val draft = localDataSource.getDraft(cachedDto.numeroSolicitud)
+            val merged = if (draft != null && draft.pendingSync) {
+                mergeOrderWithDraft(cachedDto, draft)
+            } else {
+                cachedDto
+            }
+            merged.toDomain(isPendingSync = draft?.pendingSync == true)
+        }
+        val filtered = filterAndSortDomainOrders(resolvedOrders, filter)
+        return AssignedOrdersResult(
+            orders = filtered,
+            totalCount = cachedOrders.size
+        )
+    }
+
+    private suspend fun executeOutboxFlush(): OfflineSyncSummary {
+        val pendingDrafts = localDataSource.getAllPendingDrafts()
+        if (pendingDrafts.isEmpty()) {
+            return OfflineSyncSummary()
+        }
+
+        var syncedCount = 0
+        val generatedActas = mutableListOf<String>()
+        var firstIoError: IOException? = null
+
+        for (draft in pendingDrafts) {
+            try {
+                val remoteCurrent = orderApiService.getOrderBySolicitud(draft.numeroSolicitud)
+                if (parseOrdenStatus(remoteCurrent.estado).isReadOnlyLocked) {
+                    localDataSource.cacheOrder(remoteCurrent)
+                    localDataSource.clearDraft(draft.numeroSolicitud)
+                    syncedCount++
+                    continue
+                }
+                val updated = orderApiService.saveFieldCollection(
+                    solicitudId = draft.numeroSolicitud,
+                    request = draft.request
+                )
+                localDataSource.cacheOrder(updated)
+                localDataSource.clearDraft(draft.numeroSolicitud)
+                syncedCount++
+                updated.numeroActaGenerada?.let { generatedActas.add(it) }
+            } catch (ioError: IOException) {
+                if (firstIoError == null) {
+                    firstIoError = ioError
+                }
+            }
+        }
+
+        val remainingCount = localDataSource.getAllPendingDrafts().size
+        if (syncedCount == 0 && firstIoError != null) {
+            throw firstIoError
+        }
+
+        return OfflineSyncSummary(
+            totalPendingBeforeSync = pendingDrafts.size,
+            syncedCount = syncedCount,
+            remainingPendingCount = remainingCount,
+            generatedActas = generatedActas
+        )
+    }
+
     private suspend fun fetchAndResolveOrder(numeroSolicitud: String): OrderDto {
         val remoteOrder = try {
             val fetched = orderApiService.getOrderBySolicitud(numeroSolicitud)
@@ -178,13 +326,15 @@ class OrderRepositoryImpl @Inject constructor(
         } catch (ioError: IOException) {
             localDataSource.getCachedOrder(numeroSolicitud) ?: throw ioError
         }
+        return resolveOrderWithLocalDraft(remoteOrder)
+    }
 
+    private suspend fun resolveOrderWithLocalDraft(remoteOrder: OrderDto): OrderDto {
         if (parseOrdenStatus(remoteOrder.estado).isReadOnlyLocked) {
-            localDataSource.clearDraft(numeroSolicitud)
+            localDataSource.clearDraft(remoteOrder.numeroSolicitud)
             return remoteOrder
         }
-
-        val pendingDraft = localDataSource.getDraft(numeroSolicitud)
+        val pendingDraft = localDataSource.getDraft(remoteOrder.numeroSolicitud)
         return if (pendingDraft != null && pendingDraft.pendingSync) {
             mergeOrderWithDraft(remoteOrder, pendingDraft)
         } else {
@@ -209,33 +359,38 @@ class OrderRepositoryImpl @Inject constructor(
     private suspend fun handleOfflineSaveFailure(
         submission: FieldCollectionSubmission,
         requestDto: SaveFieldCollectionRequestDto,
-        baselineOrder: OrderDto?,
-        ioError: IOException
+        baselineOrder: OrderDto?
     ): OrdenRecoleccion {
+        val normalizedArticulos = if (submission.estado == OrdenStatus.NO_RECOLECTADA) {
+            submission.articulos.map { it.copy(cantidadActa = 0).toDto() }
+        } else {
+            submission.articulos.map { it.toDto() }
+        }
         val draft = StoredFieldCollectionDraftDto(
             numeroSolicitud = submission.numeroSolicitud,
-            request = requestDto.copy(finalizeCollection = false),
-            fullArticulos = submission.articulos.map { it.toDto() },
+            request = requestDto,
+            fullArticulos = normalizedArticulos,
             pendingSync = true
         )
-
-        if (submission.finalizeCollection || submission.estado == OrdenStatus.NO_RECOLECTADA) {
-            if (submission.estado != OrdenStatus.NO_RECOLECTADA) {
-                localDataSource.saveDraft(draft)
-            }
-            throw ioError
-        }
-
         localDataSource.saveDraft(draft)
         val baseOrder = baselineOrder ?: buildFallbackOrderDto(submission).also {
             localDataSource.cacheOrder(it)
         }
-        return mergeOrderWithDraft(baseOrder, draft).toDomain()
+        return mergeOrderWithDraft(baseOrder, draft).toDomain(isPendingSync = true)
     }
 
     private suspend fun ensureNotLockedCached(numeroSolicitud: String) {
-        val cached = localDataSource.getCachedOrder(numeroSolicitud) ?: return
-        ensureNotLockedDto(cached)
+        val cached = localDataSource.getCachedOrder(numeroSolicitud)
+        if (cached != null) {
+            ensureNotLockedDto(cached)
+        }
+        val draft = localDataSource.getDraft(numeroSolicitud)
+        if (draft != null && draft.pendingSync) {
+            val draftEffectiveStatus = parseOrdenStatus(resolveDraftEffectiveStatus(draft.request))
+            if (draftEffectiveStatus.isReadOnlyLocked) {
+                throw IllegalStateException(CLOSED_ORDER_ERROR)
+            }
+        }
     }
 
     private fun ensureNotLockedDto(order: OrderDto) {
@@ -244,10 +399,35 @@ class OrderRepositoryImpl @Inject constructor(
         }
     }
 
+    private fun resolveDraftEffectiveStatus(request: SaveFieldCollectionRequestDto): String =
+        if (request.finalizeCollection && request.estado != OrdenStatus.NO_RECOLECTADA.name) {
+            OrdenStatus.RECOLECCION_REALIZADA.name
+        } else {
+            request.estado
+        }
+
     private fun mergeOrderWithDraft(
         baseOrder: OrderDto,
         draft: StoredFieldCollectionDraftDto
     ): OrderDto {
+        val effectiveStatus = resolveDraftEffectiveStatus(draft.request)
+        if (effectiveStatus == OrdenStatus.NO_RECOLECTADA.name) {
+            return baseOrder.copy(
+                estado = OrdenStatus.NO_RECOLECTADA.name,
+                articulos = baseOrder.articulos.map { it.copy(cantidadActa = 0) },
+                aplicaProvenientes = false,
+                provenientes = emptyList(),
+                numeroActaGenerada = null,
+                detalleNovedad = draft.request.detalleNovedad,
+                observacionesCampo = draft.request.observacionesCampo,
+                nombreResponsableEntrega = "",
+                identificacionResponsableEntrega = "",
+                fechaHoraInicioAtencion = baseOrder.fechaHoraInicioAtencion ?: draft.request.fechaHoraInicioAtencion,
+                fechaHoraFinalizacion = draft.request.fechaHoraFinalizacion ?: baseOrder.fechaHoraFinalizacion,
+                firmaDigitalBase64 = null
+            )
+        }
+
         val baseByCode = baseOrder.articulos.associateBy { it.codigoArticulo.uppercase() }
         val draftByCode = draft.fullArticulos.associateBy { it.codigoArticulo.uppercase() }
         val submittedQtyByCode = draft.request.articulos.associateBy { it.codigoArticulo.uppercase() }
@@ -265,7 +445,7 @@ class OrderRepositoryImpl @Inject constructor(
         }
 
         return baseOrder.copy(
-            estado = draft.request.estado,
+            estado = effectiveStatus,
             articulos = updatedBaseArticulos + extraDraftArticulos,
             aplicaProvenientes = draft.request.aplicaProvenientes,
             provenientes = if (draft.request.aplicaProvenientes) draft.request.provenientes else emptyList(),
@@ -278,6 +458,25 @@ class OrderRepositoryImpl @Inject constructor(
             firmaDigitalBase64 = draft.request.firmaDigitalBase64 ?: baseOrder.firmaDigitalBase64
         )
     }
+
+    private fun filterAndSortDomainOrders(
+        orders: List<OrdenRecoleccion>,
+        filter: OrderSearchFilter
+    ): List<OrdenRecoleccion> = orders
+        .filter { order ->
+            val afterStart = filter.startDate.isNullOrBlank() || order.fechaRecoleccion >= filter.startDate
+            val beforeEnd = filter.endDate.isNullOrBlank() || order.fechaRecoleccion <= filter.endDate
+            val statusMatches = filter.status == null || order.estado == filter.status
+            val clientMatches = filter.clientQuery.isBlank() ||
+                order.razonSocialCliente.contains(filter.clientQuery.trim(), ignoreCase = true) ||
+                order.nitCliente.contains(filter.clientQuery.trim(), ignoreCase = true)
+            val solicitudMatches = filter.numeroSolicitud.isBlank() ||
+                order.numeroSolicitud.contains(filter.numeroSolicitud.trim(), ignoreCase = true)
+            val omMatches = filter.identificadorOm.isBlank() ||
+                order.identificadorOm.contains(filter.identificadorOm.trim(), ignoreCase = true)
+            afterStart && beforeEnd && statusMatches && clientMatches && solicitudMatches && omMatches
+        }
+        .sortedByDescending { it.fechaRecoleccion }
 
     private fun buildFallbackOrderDto(submission: FieldCollectionSubmission): OrderDto = OrderDto(
         numeroSolicitud = submission.numeroSolicitud,

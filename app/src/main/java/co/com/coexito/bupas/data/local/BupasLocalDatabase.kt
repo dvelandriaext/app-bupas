@@ -43,11 +43,17 @@ interface FieldCollectionDraftDao {
     @Query("SELECT * FROM cached_orders WHERE UPPER(numeroSolicitud) = UPPER(:numeroSolicitud) LIMIT 1")
     suspend fun getCachedOrder(numeroSolicitud: String): CachedOrderEntity?
 
+    @Query("SELECT * FROM cached_orders")
+    suspend fun getAllCachedOrders(): List<CachedOrderEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertDraft(entity: FieldCollectionDraftEntity)
 
     @Query("SELECT * FROM field_collection_drafts WHERE UPPER(numeroSolicitud) = UPPER(:numeroSolicitud) LIMIT 1")
     suspend fun getDraft(numeroSolicitud: String): FieldCollectionDraftEntity?
+
+    @Query("SELECT * FROM field_collection_drafts WHERE pendingSync = 1 ORDER BY updatedAtEpochMs ASC")
+    suspend fun getAllPendingDrafts(): List<FieldCollectionDraftEntity>
 
     @Query("DELETE FROM field_collection_drafts WHERE UPPER(numeroSolicitud) = UPPER(:numeroSolicitud)")
     suspend fun deleteDraft(numeroSolicitud: String)

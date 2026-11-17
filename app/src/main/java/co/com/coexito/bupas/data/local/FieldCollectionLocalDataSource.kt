@@ -27,8 +27,10 @@ data class StoredFieldCollectionDraftDto(
 interface FieldCollectionLocalDataSource {
     suspend fun cacheOrder(order: OrderDto)
     suspend fun getCachedOrder(numeroSolicitud: String): OrderDto?
+    suspend fun getAllCachedOrders(): List<OrderDto>
     suspend fun saveDraft(draft: StoredFieldCollectionDraftDto)
     suspend fun getDraft(numeroSolicitud: String): StoredFieldCollectionDraftDto?
+    suspend fun getAllPendingDrafts(): List<StoredFieldCollectionDraftDto>
     suspend fun clearDraft(numeroSolicitud: String)
     suspend fun cacheClientPriceList(nitCliente: String, items: List<PrecioArticuloBupasDto>)
     suspend fun getCachedClientPriceList(nitCliente: String): List<PrecioArticuloBupasDto>?
@@ -56,6 +58,11 @@ class RoomFieldCollectionLocalDataSource @Inject constructor(
         return runCatching { json.decodeFromString<OrderDto>(entity.orderJson) }.getOrNull()
     }
 
+    override suspend fun getAllCachedOrders(): List<OrderDto> =
+        dao.getAllCachedOrders().mapNotNull { entity ->
+            runCatching { json.decodeFromString<OrderDto>(entity.orderJson) }.getOrNull()
+        }
+
     override suspend fun saveDraft(draft: StoredFieldCollectionDraftDto) {
         val normalizedKey = draft.numeroSolicitud.uppercase()
         dao.upsertDraft(
@@ -74,6 +81,13 @@ class RoomFieldCollectionLocalDataSource @Inject constructor(
             json.decodeFromString<StoredFieldCollectionDraftDto>(entity.draftJson)
         }.getOrNull()
     }
+
+    override suspend fun getAllPendingDrafts(): List<StoredFieldCollectionDraftDto> =
+        dao.getAllPendingDrafts().mapNotNull { entity ->
+            runCatching {
+                json.decodeFromString<StoredFieldCollectionDraftDto>(entity.draftJson)
+            }.getOrNull()
+        }
 
     override suspend fun clearDraft(numeroSolicitud: String) {
         dao.deleteDraft(numeroSolicitud.uppercase())
@@ -105,8 +119,8 @@ class RoomFieldCollectionLocalDataSource @Inject constructor(
 class InMemoryFieldCollectionLocalDataSource : FieldCollectionLocalDataSource {
 
     private val mutex = Mutex()
-    private val cachedOrders = mutableMapOf<String, OrderDto>()
-    private val drafts = mutableMapOf<String, StoredFieldCollectionDraftDto>()
+    private val cachedOrders = LinkedHashMap<String, OrderDto>()
+    private val drafts = LinkedHashMap<String, StoredFieldCollectionDraftDto>()
     private val priceLists = mutableMapOf<String, List<PrecioArticuloBupasDto>>()
 
     override suspend fun cacheOrder(order: OrderDto) = mutex.withLock {
@@ -117,12 +131,20 @@ class InMemoryFieldCollectionLocalDataSource : FieldCollectionLocalDataSource {
         cachedOrders[numeroSolicitud.uppercase()]
     }
 
+    override suspend fun getAllCachedOrders(): List<OrderDto> = mutex.withLock {
+        cachedOrders.values.toList()
+    }
+
     override suspend fun saveDraft(draft: StoredFieldCollectionDraftDto) = mutex.withLock {
         drafts[draft.numeroSolicitud.uppercase()] = draft
     }
 
     override suspend fun getDraft(numeroSolicitud: String): StoredFieldCollectionDraftDto? = mutex.withLock {
         drafts[numeroSolicitud.uppercase()]
+    }
+
+    override suspend fun getAllPendingDrafts(): List<StoredFieldCollectionDraftDto> = mutex.withLock {
+        drafts.values.filter { it.pendingSync }
     }
 
     override suspend fun clearDraft(numeroSolicitud: String) {

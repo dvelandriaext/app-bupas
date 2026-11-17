@@ -348,6 +348,158 @@ class OrderRepositoryImplTest {
             assertEquals("Camilo Andrés Vélez", recoveredWhileOffline.nombreResponsableEntrega)
             assertEquals("1144098765", recoveredWhileOffline.identificacionResponsableEntrega)
             assertEquals("RklSTUFfT0ZGTElORQ==", recoveredWhileOffline.firmaDigitalBase64)
+            assertTrue(recoveredWhileOffline.isPendingSync)
+        }
+
+    // Sincronización Fase 1 (Backend -> App): Pre-carga inicial de órdenes y listas de precios permite operar en frío sin red
+    @Test
+    fun `Sync Fase 1 carga inicial de bandeja con red precarga listas de precios permitiendo abrir orden nunca antes abierta en modo offline`() =
+        runTest(testDispatcher) {
+            val toggleableApi = ToggleableOfflineApiService(FakeOrderApiService(networkDelayMillis = 0L))
+            val localDataSource = InMemoryFieldCollectionLocalDataSource()
+            val offlineCapableRepo = OrderRepositoryImpl(
+                orderApiService = toggleableApi,
+                localDataSource = localDataSource,
+                ioDispatcher = testDispatcher
+            )
+            val prepareUseCase = PrepareFieldCollectionOrderUseCase(offlineCapableRepo)
+
+            // 1. Carga inicial de la bandeja con conexión (Backend -> App)
+            val initialInbox = offlineCapableRepo.getAssignedOrders(OrderSearchFilter()).getOrThrow()
+            assertEquals(6, initialInbox.orders.size)
+
+            // 2. El conductor pierde conexión antes de haber abierto el detalle/recolección de SOL-2026-00148
+            toggleableApi.isOffline = true
+
+            // 3. Consulta de bandeja con filtros en modo offline y apertura por primera vez de SOL-2026-00148
+            val offlineInboxFiltered = offlineCapableRepo.getAssignedOrders(
+                OrderSearchFilter(status = OrdenStatus.ORDEN_ASIGNADA)
+            ).getOrThrow()
+            assertEquals(1, offlineInboxFiltered.orders.size)
+            assertEquals("SOL-2026-00148", offlineInboxFiltered.orders.first().numeroSolicitud)
+
+            val preparedOffline = prepareUseCase("SOL-2026-00148").getOrThrow()
+            assertEquals(4, preparedOffline.articulos.size)
+            assertEquals(
+                setOf("BUP-AUTO-34", "BUP-PESADA-31"),
+                preparedOffline.articulos.filter { it.cantidadInicial == 0 }.map { it.codigoArticulo }.toSet()
+            )
+        }
+
+    // Sincronización Fase 2 y 3 (App -> Room Outbox -> Backend): Cierre definitivo offline (Recolección Realizada y No Recolectada) y flush con generación de Acta Respel
+    @Test
+    fun `Sync Fase 2 y 3 permite cerrar ordenes en modo offline bajo PENDING_SYNC bloqueando edicion y sincroniza hacia el backend emitiendo Acta Respel`() =
+        runTest(testDispatcher) {
+            val toggleableApi = ToggleableOfflineApiService(FakeOrderApiService(networkDelayMillis = 0L))
+            val localDataSource = InMemoryFieldCollectionLocalDataSource()
+            val offlineCapableRepo = OrderRepositoryImpl(
+                orderApiService = toggleableApi,
+                localDataSource = localDataSource,
+                ioDispatcher = testDispatcher
+            )
+            val prepareUseCase = PrepareFieldCollectionOrderUseCase(offlineCapableRepo)
+            val saveUseCase = SaveFieldCollectionUseCase(
+                orderRepository = offlineCapableRepo,
+                timeProvider = FixedTimeProvider("2026-11-15 10:15:00")
+            )
+
+            // Pre-carga inicial con red (Backend -> App)
+            offlineCapableRepo.getAssignedOrders(OrderSearchFilter()).getOrThrow()
+
+            // Pérdida de red en sitio
+            toggleableApi.isOffline = true
+
+            // Cierre 1 Offline: SOL-2026-00148 -> Recolección Realizada con cantidades > 0
+            val order148 = prepareUseCase("SOL-2026-00148").getOrThrow()
+            val closedOffline148 = saveUseCase(
+                FieldCollectionSubmission(
+                    numeroSolicitud = "SOL-2026-00148",
+                    estado = OrdenStatus.EN_ATENCION,
+                    articulos = order148.articulos.map {
+                        it.copy(cantidadActa = if (it.codigoArticulo == "BUP-AUTO-42") 14 else 0)
+                    },
+                    aplicaProvenientes = false,
+                    provenientes = emptyList(),
+                    detalleNovedad = null,
+                    observacionesCampo = "Cierre definitivo en zona sin cobertura",
+                    nombreResponsableEntrega = "Carlos Alberto Mejía",
+                    identificacionResponsableEntrega = "94500112",
+                    finalizeCollection = true,
+                    firmaDigitalBase64 = "RklSTUFfQ0lFUlJFX09GRkxJTkU="
+                )
+            ).getOrThrow()
+
+            assertEquals(OrdenStatus.RECOLECCION_REALIZADA, closedOffline148.estado)
+            assertTrue(closedOffline148.isPendingSync)
+            assertEquals("2026-11-15 10:15:00", closedOffline148.fechaHoraFinalizacion)
+
+            // Cierre 2 Offline: SOL-2026-00145 -> No Recolectada con novedad obligatoria
+            val order145 = prepareUseCase("SOL-2026-00145").getOrThrow()
+            val closedOffline145 = saveUseCase(
+                FieldCollectionSubmission(
+                    numeroSolicitud = "SOL-2026-00145",
+                    estado = OrdenStatus.NO_RECOLECTADA,
+                    articulos = order145.articulos,
+                    aplicaProvenientes = false,
+                    provenientes = emptyList(),
+                    detalleNovedad = "Planta en mantenimiento eléctrico sin acceso a bodega",
+                    observacionesCampo = "",
+                    nombreResponsableEntrega = "",
+                    identificacionResponsableEntrega = "",
+                    finalizeCollection = true
+                )
+            ).getOrThrow()
+
+            assertEquals(OrdenStatus.NO_RECOLECTADA, closedOffline145.estado)
+            assertTrue(closedOffline145.isPendingSync)
+            assertEquals("2026-11-15 10:15:00", closedOffline145.fechaHoraFinalizacion)
+            assertEquals(2, offlineCapableRepo.getPendingSyncCount())
+
+            // Intentar modificar una orden ya cerrada en modo offline debe ser rechazado (CA 8)
+            val illegalEditOffline = saveUseCase(
+                FieldCollectionSubmission(
+                    numeroSolicitud = "SOL-2026-00148",
+                    estado = OrdenStatus.EN_ATENCION,
+                    articulos = closedOffline148.articulos,
+                    aplicaProvenientes = false,
+                    provenientes = emptyList(),
+                    detalleNovedad = null,
+                    observacionesCampo = "Intento de edición post-cierre offline",
+                    nombreResponsableEntrega = "Otro",
+                    identificacionResponsableEntrega = "123",
+                    finalizeCollection = false
+                )
+            )
+            assertTrue(illegalEditOffline.isFailure)
+
+            // Sincronización Descendente (Backend -> App) antes de subir la cola preserva los cierres locales PENDING_SYNC
+            toggleableApi.isOffline = false
+            val inboxBeforeFlush = offlineCapableRepo.getAssignedOrders(OrderSearchFilter()).getOrThrow()
+            val inbox148BeforeFlush = inboxBeforeFlush.orders.first { it.numeroSolicitud == "SOL-2026-00148" }
+            assertEquals(OrdenStatus.RECOLECCION_REALIZADA, inbox148BeforeFlush.estado)
+            assertTrue(inbox148BeforeFlush.isPendingSync)
+
+            // Sincronización Ascendente (App -> Backend): envía la cola PENDING_SYNC y genera Acta Respel (HU-007)
+            val syncSummary = offlineCapableRepo.syncPendingCollections().getOrThrow()
+            assertEquals(2, syncSummary.totalPendingBeforeSync)
+            assertEquals(2, syncSummary.syncedCount)
+            assertEquals(0, syncSummary.remainingPendingCount)
+            assertEquals(listOf("POS-0148"), syncSummary.generatedActas)
+            assertEquals(0, offlineCapableRepo.getPendingSyncCount())
+
+            val synced148 = offlineCapableRepo.getOrderBySolicitud("SOL-2026-00148").getOrThrow()
+            assertFalse(synced148.isPendingSync)
+            assertEquals(OrdenStatus.RECOLECCION_REALIZADA, synced148.estado)
+            assertEquals("POS-0148", synced148.numeroActaGenerada)
+
+            val acta148 = offlineCapableRepo.getActaBySolicitud("SOL-2026-00148").getOrThrow()
+            assertEquals("POS-0148", acta148.numeroActa)
+            assertEquals(14, acta148.totalCantidadRecolectada)
+
+            val synced145 = offlineCapableRepo.getOrderBySolicitud("SOL-2026-00145").getOrThrow()
+            assertFalse(synced145.isPendingSync)
+            assertEquals(OrdenStatus.NO_RECOLECTADA, synced145.estado)
+            assertEquals("Planta en mantenimiento eléctrico sin acceso a bodega", synced145.detalleNovedad)
         }
 }
 

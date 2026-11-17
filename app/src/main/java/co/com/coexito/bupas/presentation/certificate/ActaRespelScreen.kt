@@ -23,12 +23,16 @@ import co.com.coexito.bupas.BuildConfig
 import co.com.coexito.bupas.core.config.AppEnvironment
 import co.com.coexito.bupas.core.designsystem.components.BupasAlertModal
 import co.com.coexito.bupas.core.designsystem.components.BupasPrimaryButton
+import co.com.coexito.bupas.core.designsystem.components.BupasSectionCard
+import co.com.coexito.bupas.core.designsystem.components.BupasTextButton
 import co.com.coexito.bupas.core.designsystem.components.BupasTopBar
 import co.com.coexito.bupas.core.designsystem.theme.BupasTheme
 import co.com.coexito.bupas.domain.model.ArticuloBupas
 import co.com.coexito.bupas.domain.model.OrdenRecoleccion
 import co.com.coexito.bupas.domain.model.OrdenStatus
 import co.com.coexito.bupas.domain.usecase.certificate.BuildActaRespelUseCase
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 
 @Composable
 fun ActaRespelRoute(
@@ -115,10 +119,50 @@ private fun ActaRespelContent(
                 onRetryContingencyClick = { onEvent(ActaRespelUiEvent.OnRetryContingencyClick) }
             )
         }
+        if (BuildConfig.USE_FAKE_DATA) {
+            item {
+                ActaDemoContingencyControls(
+                    onSimulateGenerationError = {
+                        onEvent(ActaRespelUiEvent.OnSimulateGenerationErrorClick)
+                    },
+                    onSimulateEmailError = {
+                        onEvent(ActaRespelUiEvent.OnSimulateEmailErrorClick)
+                    }
+                )
+            }
+        }
         if (uiState.isPdfDocumentVisible && acta.canViewPdf) {
             item {
                 ActaOfficialPdfDocumentCard(acta = acta)
             }
+        }
+    }
+}
+
+@Composable
+private fun ActaDemoContingencyControls(
+    onSimulateGenerationError: () -> Unit,
+    onSimulateEmailError: () -> Unit
+) {
+    BupasSectionCard(
+        title = "Simulador de Contingencia (Demo HU-007)",
+        subtitle = "Pruebe los escenarios de fallo de generación PDF (CA 3) y fallo de envío por correo con reintentos 2h/4h/6h (CA 2)"
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(BupasTheme.spacing.sm),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            BupasTextButton(
+                text = "Simular Error Generación (CA 3)",
+                onClick = onSimulateGenerationError,
+                modifier = Modifier.weight(1f)
+            )
+            BupasTextButton(
+                text = "Simular Error Envío (CA 2)",
+                onClick = onSimulateEmailError,
+                modifier = Modifier.weight(1f)
+            )
         }
     }
 }

@@ -44,3 +44,15 @@ data class FieldCollectionValidationErrors(
             identificacionResponsableError == null &&
             firmaDigitalError == null
 }
+
+/**
+ * Resumen de ejecución de la sincronización ascendente (App -> Backend)
+ * de avances y cierres registrados sin conexión (HU-006 y HU-007).
+ */
+@Immutable
+data class OfflineSyncSummary(
+    val totalPendingBeforeSync: Int = 0,
+    val syncedCount: Int = 0,
+    val remainingPendingCount: Int = 0,
+    val generatedActas: List<String> = emptyList()
+)

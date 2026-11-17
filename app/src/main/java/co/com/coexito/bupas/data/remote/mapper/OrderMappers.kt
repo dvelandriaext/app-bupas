@@ -18,12 +18,16 @@ import co.com.coexito.bupas.domain.model.PrecioArticuloBupas
 import co.com.coexito.bupas.domain.model.TerceroProveniente
 import co.com.coexito.bupas.domain.model.TipoBateriaProveniente
 
-fun AssignedOrdersResponseDto.toDomain(): AssignedOrdersResult = AssignedOrdersResult(
-    orders = orders.map { it.toDomain() },
+fun AssignedOrdersResponseDto.toDomain(
+    pendingSyncIds: Set<String> = emptySet()
+): AssignedOrdersResult = AssignedOrdersResult(
+    orders = orders.map { dto ->
+        dto.toDomain(isPendingSync = dto.numeroSolicitud.uppercase() in pendingSyncIds)
+    },
     totalCount = totalCount
 )
 
-fun OrderDto.toDomain(): OrdenRecoleccion = OrdenRecoleccion(
+fun OrderDto.toDomain(isPendingSync: Boolean = false): OrdenRecoleccion = OrdenRecoleccion(
     numeroSolicitud = numeroSolicitud,
     identificadorOm = identificadorOm,
     cedi = cedi,
@@ -56,7 +60,8 @@ fun OrderDto.toDomain(): OrdenRecoleccion = OrdenRecoleccion(
     placaVehiculo = placaVehiculo,
     estadoGeneracionActa = estadoGeneracionActa?.let { EstadoGeneracionActa.fromRaw(it) },
     estadoEnvioActa = estadoEnvioActa?.let { EstadoEnvioActa.fromRaw(it) },
-    detalleErrorActa = detalleErrorActa
+    detalleErrorActa = detalleErrorActa,
+    isPendingSync = isPendingSync
 )
 
 fun FieldCollectionSubmission.toDto(): SaveFieldCollectionRequestDto = SaveFieldCollectionRequestDto(

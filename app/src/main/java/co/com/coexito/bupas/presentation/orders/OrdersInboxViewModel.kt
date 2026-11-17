@@ -2,7 +2,9 @@ package co.com.coexito.bupas.presentation.orders
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import co.com.coexito.bupas.domain.model.OfflineSyncSummary
 import co.com.coexito.bupas.domain.model.OrderSearchFilter
+import co.com.coexito.bupas.domain.usecase.collection.SyncPendingCollectionsUseCase
 import co.com.coexito.bupas.domain.usecase.orders.GetAssignedOrdersUseCase
 import co.com.coexito.bupas.domain.usecase.orders.ValidateDateRangeUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -19,10 +21,24 @@ import kotlinx.coroutines.launch
 @HiltViewModel
 class OrdersInboxViewModel @Inject constructor(
     private val getAssignedOrdersUseCase: GetAssignedOrdersUseCase,
-    private val validateDateRangeUseCase: ValidateDateRangeUseCase
+    private val validateDateRangeUseCase: ValidateDateRangeUseCase,
+    private val syncPendingCollectionsUseCase: SyncPendingCollectionsUseCase?
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(OrdersInboxUiState())
+    constructor(
+        getAssignedOrdersUseCase: GetAssignedOrdersUseCase,
+        validateDateRangeUseCase: ValidateDateRangeUseCase
+    ) : this(
+        getAssignedOrdersUseCase = getAssignedOrdersUseCase,
+        validateDateRangeUseCase = validateDateRangeUseCase,
+        syncPendingCollectionsUseCase = null
+    )
+
+    private val _uiState = MutableStateFlow(
+        OrdersInboxUiState(
+            isOfflineMode = syncPendingCollectionsUseCase?.isSimulatedOfflineMode() ?: false
+        )
+    )
     val uiState: StateFlow<OrdersInboxUiState> = _uiState.asStateFlow()
 
     private val _navigationEffects = MutableSharedFlow<OrdersInboxNavigationEffect>()
@@ -48,7 +64,62 @@ class OrdersInboxViewModel @Inject constructor(
             is OrdersInboxUiEvent.OnOrderDetailClick -> navigateToDetail(event.numeroSolicitud)
             is OrdersInboxUiEvent.OnViewActaClick -> navigateToActa(event.order.numeroSolicitud, event.order.canViewActaPdf)
             OrdersInboxUiEvent.OnDismissActaPreview -> _uiState.update { it.copy(selectedActaPreview = null) }
+            is OrdersInboxUiEvent.OnToggleOfflineMode -> handleToggleOfflineMode(event.offline)
+            OrdersInboxUiEvent.OnSyncPendingClick -> executePendingSync()
+            OrdersInboxUiEvent.OnDismissSyncFeedback -> _uiState.update { it.copy(syncFeedbackMessage = null) }
         }
+    }
+
+    private fun handleToggleOfflineMode(offline: Boolean) {
+        syncPendingCollectionsUseCase?.setSimulatedOfflineMode(offline)
+        _uiState.update { it.copy(isOfflineMode = offline, syncFeedbackMessage = null) }
+        if (!offline && (_uiState.value.pendingSyncCount > 0)) {
+            executePendingSync()
+        } else {
+            fetchOrders(_uiState.value.appliedFilter)
+        }
+    }
+
+    private fun executePendingSync() {
+        val syncUseCase = syncPendingCollectionsUseCase ?: return
+        if (_uiState.value.isSyncingPending) return
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSyncingPending = true, syncFeedbackMessage = null) }
+            syncUseCase()
+                .onSuccess { summary ->
+                    val feedback = formatSyncSummaryMessage(summary)
+                    _uiState.update {
+                        it.copy(
+                            isSyncingPending = false,
+                            pendingSyncCount = summary.remainingPendingCount,
+                            syncFeedbackMessage = feedback
+                        )
+                    }
+                    fetchOrders(_uiState.value.appliedFilter)
+                }
+                .onFailure { error ->
+                    val remaining = syncUseCase.getPendingSyncCount()
+                    _uiState.update {
+                        it.copy(
+                            isSyncingPending = false,
+                            pendingSyncCount = remaining,
+                            syncFeedbackMessage = error.message
+                                ?: "No fue posible sincronizar las órdenes pendientes."
+                        )
+                    }
+                }
+        }
+    }
+
+    private fun formatSyncSummaryMessage(summary: OfflineSyncSummary): String? {
+        if (summary.syncedCount == 0) return null
+        val actasSuffix = if (summary.generatedActas.isNotEmpty()) {
+            " • Acta(s) Respel emitida(s): ${summary.generatedActas.joinToString(", ")}"
+        } else {
+            ""
+        }
+        return "Sincronización completada: ${summary.syncedCount} orden(es) enviada(s) al servidor$actasSuffix."
     }
 
     private fun openFilters() {
@@ -133,10 +204,18 @@ class OrdersInboxViewModel @Inject constructor(
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
             getAssignedOrdersUseCase(filter)
                 .onSuccess { result ->
+                    val totalPending = maxOf(
+                        result.orders.count { it.isPendingSync },
+                        syncPendingCollectionsUseCase?.getPendingSyncCount() ?: 0
+                    )
+                    val isOffline = syncPendingCollectionsUseCase?.isSimulatedOfflineMode()
+                        ?: _uiState.value.isOfflineMode
                     _uiState.update {
                         it.copy(
                             orders = result.orders,
                             totalCount = result.totalCount,
+                            pendingSyncCount = totalPending,
+                            isOfflineMode = isOffline,
                             isLoading = false,
                             errorMessage = null
                         )

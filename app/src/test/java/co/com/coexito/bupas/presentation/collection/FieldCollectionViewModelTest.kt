@@ -467,6 +467,36 @@ class FieldCollectionViewModelTest {
             assertEquals("RklSTUFfT0ZGTElORV9WTQ==", restored.firmaDigitalBase64)
         }
 
+    // HU-006 - Caso Borde 4 (Cierre Offline en Room PENDING_SYNC): Finalizar recolección sin red cierra en solo lectura y encola sincronización
+    @Test
+    fun `R2 finalizar recoleccion en modo offline cierra la orden en solo lectura bajo estado PENDING_SYNC lista para sincronizar`() =
+        runTest(testDispatcher) {
+            advanceUntilIdle()
+            spyApiService.isOffline = true
+            fakeTimeProvider.currentTimestamp = "2026-11-15 10:55:00"
+
+            viewModel.onEvent(FieldCollectionUiEvent.OnStatusSelected(OrdenStatus.EN_ATENCION))
+            advanceUntilIdle()
+            fillAllArticleQuantities(auto42 = "15", moto12 = "8", auto34 = "0", pesada31 = "0")
+            viewModel.onEvent(FieldCollectionUiEvent.OnNombreResponsableChanged("Roberto Carlos Gómez"))
+            viewModel.onEvent(FieldCollectionUiEvent.OnIdentificacionResponsableChanged("79888111"))
+            viewModel.onEvent(FieldCollectionUiEvent.OnSignatureCaptured("RklSTUFfRklOQUxJWkFSX09GRkxJTkU="))
+
+            viewModel.onEvent(FieldCollectionUiEvent.OnFinalizeClick)
+            assertTrue(viewModel.uiState.value.showFinalizeConfirmDialog)
+
+            viewModel.onEvent(FieldCollectionUiEvent.OnConfirmFinalize)
+            advanceUntilIdle()
+
+            val state = viewModel.uiState.value
+            assertTrue(state.isReadOnly)
+            assertTrue(state.isOfflineDraftSaved)
+            assertEquals(OrdenStatus.RECOLECCION_REALIZADA, state.order?.estado)
+            assertEquals("2026-11-15 10:55:00", state.fechaHoraFinalizacion)
+            assertTrue(state.order?.isPendingSync == true)
+            assertEquals("Cierre guardado sin conexión", state.completionAlertTitle)
+        }
+
     private fun buildViewModel(
         numeroSolicitud: String,
         orderRepository: OrderRepository,

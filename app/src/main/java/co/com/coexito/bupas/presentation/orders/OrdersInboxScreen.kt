@@ -13,14 +13,18 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Inbox
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -33,6 +37,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import co.com.coexito.bupas.BuildConfig
 import co.com.coexito.bupas.core.config.AppEnvironment
@@ -61,6 +67,12 @@ fun OrdersInboxRoute(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var showThemeDialog by remember { mutableStateOf(false) }
+
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        if (!uiState.isLoading) {
+            viewModel.onEvent(OrdersInboxUiEvent.OnRefreshOrders)
+        }
+    }
 
     LaunchedEffect(viewModel) {
         viewModel.navigationEffects.collect { effect ->
@@ -118,6 +130,15 @@ fun OrdersInboxScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
+            if (BuildConfig.USE_FAKE_DATA || uiState.pendingSyncCount > 0) {
+                OrdersConnectivityAndSyncBanner(
+                    isOfflineMode = uiState.isOfflineMode,
+                    pendingSyncCount = uiState.pendingSyncCount,
+                    isSyncingPending = uiState.isSyncingPending,
+                    onToggleOffline = { onEvent(OrdersInboxUiEvent.OnToggleOfflineMode(it)) },
+                    onSyncNowClick = { onEvent(OrdersInboxUiEvent.OnSyncPendingClick) }
+                )
+            }
             OrdersFilterSummaryHeader(
                 visibleCount = uiState.orders.size,
                 totalCount = uiState.totalCount,
@@ -136,6 +157,110 @@ fun OrdersInboxScreen(
         uiState = uiState,
         onEvent = onEvent
     )
+}
+
+@Composable
+private fun OrdersConnectivityAndSyncBanner(
+    isOfflineMode: Boolean,
+    pendingSyncCount: Int,
+    isSyncingPending: Boolean,
+    onToggleOffline: (Boolean) -> Unit,
+    onSyncNowClick: () -> Unit
+) {
+    val containerColor = if (isOfflineMode || pendingSyncCount > 0) {
+        BupasTheme.extendedColors.enAtencion.containerColor
+    } else {
+        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f)
+    }
+    val contentColor = if (isOfflineMode || pendingSyncCount > 0) {
+        BupasTheme.extendedColors.enAtencion.contentColor
+    } else {
+        MaterialTheme.colorScheme.onSecondaryContainer
+    }
+
+    Surface(
+        color = containerColor,
+        contentColor = contentColor,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(
+                    horizontal = BupasTheme.spacing.md,
+                    vertical = BupasTheme.spacing.xs
+                ),
+            verticalArrangement = Arrangement.spacedBy(BupasTheme.spacing.xs)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(BupasTheme.spacing.xs),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = if (isOfflineMode) Icons.Default.CloudOff else Icons.Default.CloudDone,
+                        contentDescription = null
+                    )
+                    Column {
+                        Text(
+                            text = if (isOfflineMode) {
+                                "Modo Sin Conexión (Demo Offline)"
+                            } else {
+                                "Conectado al Servidor (Online)"
+                            },
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                        Text(
+                            text = if (pendingSyncCount > 0) {
+                                "$pendingSyncCount orden(es) en cola local (PENDING_SYNC)"
+                            } else {
+                                "Catálogo y listas de precios sincronizados en Room"
+                            },
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+                if (BuildConfig.USE_FAKE_DATA) {
+                    Switch(
+                        checked = !isOfflineMode,
+                        onCheckedChange = { isOnline -> onToggleOffline(!isOnline) }
+                    )
+                }
+            }
+            if (pendingSyncCount > 0) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    FilledTonalButton(
+                        onClick = onSyncNowClick,
+                        enabled = !isOfflineMode && !isSyncingPending
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Sync,
+                            contentDescription = null,
+                            modifier = Modifier.padding(end = BupasTheme.spacing.xs)
+                        )
+                        Text(
+                            text = if (isSyncingPending) {
+                                "Sincronizando..."
+                            } else if (isOfflineMode) {
+                                "Active red para sincronizar ($pendingSyncCount)"
+                            } else {
+                                "Sincronizar ahora ($pendingSyncCount)"
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -367,6 +492,14 @@ private fun OrdersInboxOverlays(
                 "Unidades recolectadas: ${order.totalUnidadesActa}\n\n" +
                 "La descarga y visualización PDF completa estará disponible en HU-007.",
             onDismiss = { onEvent(OrdersInboxUiEvent.OnDismissActaPreview) }
+        )
+    }
+
+    uiState.syncFeedbackMessage?.let { syncMessage ->
+        BupasAlertModal(
+            title = "Sincronización BUPAS",
+            message = syncMessage,
+            onDismiss = { onEvent(OrdersInboxUiEvent.OnDismissSyncFeedback) }
         )
     }
 }

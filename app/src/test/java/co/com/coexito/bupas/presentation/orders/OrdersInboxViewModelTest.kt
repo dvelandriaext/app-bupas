@@ -2,7 +2,9 @@ package co.com.coexito.bupas.presentation.orders
 
 import co.com.coexito.bupas.data.remote.FakeOrderApiService
 import co.com.coexito.bupas.data.repository.OrderRepositoryImpl
+import co.com.coexito.bupas.domain.model.FieldCollectionSubmission
 import co.com.coexito.bupas.domain.model.OrdenStatus
+import co.com.coexito.bupas.domain.usecase.collection.SyncPendingCollectionsUseCase
 import co.com.coexito.bupas.domain.usecase.orders.GetAssignedOrdersUseCase
 import co.com.coexito.bupas.domain.usecase.orders.ValidateDateRangeUseCase
 import kotlinx.coroutines.Dispatchers
@@ -17,30 +19,33 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
 /**
- * Pruebas unitarias de OrdersInboxViewModel alineadas con HU-005 CA 1, CA 4, CA 5 y casos borde.
+ * Pruebas unitarias de OrdersInboxViewModel alineadas con HU-005 CA 1, CA 4, CA 5 y sincronización offline/online.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class OrdersInboxViewModelTest {
 
     private val testDispatcher = StandardTestDispatcher()
+    private lateinit var repository: OrderRepositoryImpl
     private lateinit var viewModel: OrdersInboxViewModel
 
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
-        val repository = OrderRepositoryImpl(
+        repository = OrderRepositoryImpl(
             orderApiService = FakeOrderApiService(networkDelayMillis = 0L),
             ioDispatcher = testDispatcher
         )
         viewModel = OrdersInboxViewModel(
             getAssignedOrdersUseCase = GetAssignedOrdersUseCase(repository),
-            validateDateRangeUseCase = ValidateDateRangeUseCase()
+            validateDateRangeUseCase = ValidateDateRangeUseCase(),
+            syncPendingCollectionsUseCase = SyncPendingCollectionsUseCase(repository)
         )
     }
 
@@ -118,4 +123,59 @@ class OrdersInboxViewModelTest {
         assertEquals(OrdenStatus.ORDEN_ASIGNADA, state.appliedFilter.status)
         assertEquals(1, state.orders.size)
     }
+
+    @Test
+    fun `Sync bandeja en modo offline muestra ordenes cacheadas con conteo PENDING_SYNC y sincroniza automaticamente al reconectar`() =
+        runTest(testDispatcher) {
+            advanceUntilIdle()
+
+            // Conmutar a modo Offline desde la bandeja
+            viewModel.onEvent(OrdersInboxUiEvent.OnToggleOfflineMode(offline = true))
+            advanceUntilIdle()
+            assertTrue(viewModel.uiState.value.isOfflineMode)
+            assertEquals(6, viewModel.uiState.value.orders.size)
+
+            // El conductor cierra SOL-2026-00148 sin conexión
+            val order148 = repository.getOrderBySolicitud("SOL-2026-00148").getOrThrow()
+            repository.saveFieldCollection(
+                FieldCollectionSubmission(
+                    numeroSolicitud = "SOL-2026-00148",
+                    estado = OrdenStatus.EN_ATENCION,
+                    articulos = order148.articulos.map { it.copy(cantidadActa = 10) },
+                    aplicaProvenientes = false,
+                    provenientes = emptyList(),
+                    detalleNovedad = null,
+                    observacionesCampo = "Cierre en campo sin red",
+                    nombreResponsableEntrega = "Mario Montoya",
+                    identificacionResponsableEntrega = "10203040",
+                    finalizeCollection = true,
+                    fechaHoraInicioAtencion = "2026-11-15 08:30:00",
+                    fechaHoraFinalizacion = "2026-11-15 09:00:00",
+                    firmaDigitalBase64 = "RklSTUFfSU5CT1hfT0ZGTElORQ=="
+                )
+            ).getOrThrow()
+
+            // Al volver a la bandeja sin red, refleja el estado cerrado local y pendingSyncCount = 1
+            viewModel.onEvent(OrdersInboxUiEvent.OnRefreshOrders)
+            advanceUntilIdle()
+            val offlineInboxState = viewModel.uiState.value
+            assertEquals(1, offlineInboxState.pendingSyncCount)
+            val cardOffline = offlineInboxState.orders.first { it.numeroSolicitud == "SOL-2026-00148" }
+            assertEquals(OrdenStatus.RECOLECCION_REALIZADA, cardOffline.estado)
+            assertTrue(cardOffline.isPendingSync)
+
+            // Al reconectar (OnToggleOfflineMode(false)), sincroniza automáticamente hacia el backend y genera Acta POS-0148
+            viewModel.onEvent(OrdersInboxUiEvent.OnToggleOfflineMode(offline = false))
+            advanceUntilIdle()
+
+            val onlineSyncedState = viewModel.uiState.value
+            assertFalse(onlineSyncedState.isOfflineMode)
+            assertEquals(0, onlineSyncedState.pendingSyncCount)
+            assertNotNull(onlineSyncedState.syncFeedbackMessage)
+            assertTrue(onlineSyncedState.syncFeedbackMessage!!.contains("POS-0148"))
+
+            val cardSynced = onlineSyncedState.orders.first { it.numeroSolicitud == "SOL-2026-00148" }
+            assertFalse(cardSynced.isPendingSync)
+            assertEquals("POS-0148", cardSynced.numeroActaGenerada)
+        }
 }
