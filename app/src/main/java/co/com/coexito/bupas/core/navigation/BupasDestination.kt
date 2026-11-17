@@ -10,4 +10,7 @@ sealed class BupasDestination(val route: String) {
     data object FieldCollection : BupasDestination("field_collection/{numeroSolicitud}") {
         fun createRoute(numeroSolicitud: String): String = "field_collection/$numeroSolicitud"
     }
+    data object ActaCertificate : BupasDestination("acta_certificate/{numeroSolicitud}") {
+        fun createRoute(numeroSolicitud: String): String = "acta_certificate/$numeroSolicitud"
+    }
 }

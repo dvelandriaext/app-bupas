@@ -46,7 +46,7 @@ class OrdersInboxViewModel @Inject constructor(
             OrdersInboxUiEvent.OnApplyFilters -> applyFilters()
             OrdersInboxUiEvent.OnClearFilters -> clearFilters()
             is OrdersInboxUiEvent.OnOrderDetailClick -> navigateToDetail(event.numeroSolicitud)
-            is OrdersInboxUiEvent.OnViewActaClick -> _uiState.update { it.copy(selectedActaPreview = event.order) }
+            is OrdersInboxUiEvent.OnViewActaClick -> navigateToActa(event.order.numeroSolicitud, event.order.canViewActaPdf)
             OrdersInboxUiEvent.OnDismissActaPreview -> _uiState.update { it.copy(selectedActaPreview = null) }
         }
     }
@@ -118,6 +118,13 @@ class OrdersInboxViewModel @Inject constructor(
     private fun navigateToDetail(numeroSolicitud: String) {
         viewModelScope.launch {
             _navigationEffects.emit(OrdersInboxNavigationEffect.NavigateToOrderDetail(numeroSolicitud))
+        }
+    }
+
+    private fun navigateToActa(numeroSolicitud: String, canViewPdf: Boolean) {
+        if (!canViewPdf) return
+        viewModelScope.launch {
+            _navigationEffects.emit(OrdersInboxNavigationEffect.NavigateToActaCertificate(numeroSolicitud))
         }
     }
 

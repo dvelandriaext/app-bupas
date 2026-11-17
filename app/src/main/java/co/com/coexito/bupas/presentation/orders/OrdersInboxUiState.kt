@@ -37,4 +37,5 @@ sealed interface OrdersInboxUiEvent {
 
 sealed interface OrdersInboxNavigationEffect {
     data class NavigateToOrderDetail(val numeroSolicitud: String) : OrdersInboxNavigationEffect
+    data class NavigateToActaCertificate(val numeroSolicitud: String) : OrdersInboxNavigationEffect
 }

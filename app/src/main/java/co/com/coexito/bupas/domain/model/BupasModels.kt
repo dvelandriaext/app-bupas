@@ -108,10 +108,23 @@ data class OrdenRecoleccion(
     val identificacionResponsableEntrega: String = "",
     val fechaHoraInicioAtencion: String? = null,
     val fechaHoraFinalizacion: String? = null,
-    val firmaDigitalBase64: String? = null
+    val firmaDigitalBase64: String? = null,
+    val telefonoCliente: String = "3164208890",
+    val correoPrincipalCliente: String = "ambiental@cliente.com.co",
+    val correoAlternoCliente: String? = null,
+    val conductorNombre: String = "Juan Carlos Ramírez",
+    val conductorCedula: String = "1144089231",
+    val placaVehiculo: String = "WXY-482",
+    val estadoGeneracionActa: EstadoGeneracionActa? = null,
+    val estadoEnvioActa: EstadoEnvioActa? = null,
+    val detalleErrorActa: String? = null
 ) {
     val totalUnidadesActa: Int
         get() = articulos.sumOf { it.cantidadActa ?: 0 }
+
+    val canViewActaPdf: Boolean
+        get() = !numeroActaGenerada.isNullOrBlank() &&
+            (estadoGeneracionActa ?: EstadoGeneracionActa.GENERADA) == EstadoGeneracionActa.GENERADA
 
     val pesoTotalEstimadoKg: Double
         get() = if (articulos.any { it.cantidadActa != null }) {

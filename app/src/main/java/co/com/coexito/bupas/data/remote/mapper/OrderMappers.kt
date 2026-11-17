@@ -9,6 +9,8 @@ import co.com.coexito.bupas.data.remote.dto.SaveFieldCollectionRequestDto
 import co.com.coexito.bupas.data.remote.dto.TerceroProvenienteDto
 import co.com.coexito.bupas.domain.model.ArticuloBupas
 import co.com.coexito.bupas.domain.model.AssignedOrdersResult
+import co.com.coexito.bupas.domain.model.EstadoEnvioActa
+import co.com.coexito.bupas.domain.model.EstadoGeneracionActa
 import co.com.coexito.bupas.domain.model.FieldCollectionSubmission
 import co.com.coexito.bupas.domain.model.OrdenRecoleccion
 import co.com.coexito.bupas.domain.model.OrdenStatus
@@ -45,7 +47,16 @@ fun OrderDto.toDomain(): OrdenRecoleccion = OrdenRecoleccion(
     identificacionResponsableEntrega = identificacionResponsableEntrega,
     fechaHoraInicioAtencion = fechaHoraInicioAtencion,
     fechaHoraFinalizacion = fechaHoraFinalizacion,
-    firmaDigitalBase64 = firmaDigitalBase64
+    firmaDigitalBase64 = firmaDigitalBase64,
+    telefonoCliente = telefonoCliente,
+    correoPrincipalCliente = correoPrincipalCliente,
+    correoAlternoCliente = correoAlternoCliente,
+    conductorNombre = conductorNombre,
+    conductorCedula = conductorCedula,
+    placaVehiculo = placaVehiculo,
+    estadoGeneracionActa = estadoGeneracionActa?.let { EstadoGeneracionActa.fromRaw(it) },
+    estadoEnvioActa = estadoEnvioActa?.let { EstadoEnvioActa.fromRaw(it) },
+    detalleErrorActa = detalleErrorActa
 )
 
 fun FieldCollectionSubmission.toDto(): SaveFieldCollectionRequestDto = SaveFieldCollectionRequestDto(

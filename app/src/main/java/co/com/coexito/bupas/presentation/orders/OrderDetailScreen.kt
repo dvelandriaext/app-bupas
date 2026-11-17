@@ -26,6 +26,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import co.com.coexito.bupas.BuildConfig
 import co.com.coexito.bupas.core.config.AppEnvironment
 import co.com.coexito.bupas.core.designsystem.components.BupasPrimaryButton
+import co.com.coexito.bupas.core.designsystem.components.BupasSecondaryButton
 import co.com.coexito.bupas.core.designsystem.components.BupasSectionCard
 import co.com.coexito.bupas.core.designsystem.components.BupasStatusBadge
 import co.com.coexito.bupas.core.designsystem.components.BupasSummaryTotalsBar
@@ -40,6 +41,7 @@ import java.util.Locale
 fun OrderDetailRoute(
     onBackClick: () -> Unit,
     onNavigateToFieldCollection: (String) -> Unit = {},
+    onNavigateToActa: (String) -> Unit = {},
     viewModel: OrderDetailViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -54,6 +56,7 @@ fun OrderDetailRoute(
         uiState = uiState,
         onBackClick = onBackClick,
         onNavigateToFieldCollection = onNavigateToFieldCollection,
+        onNavigateToActa = onNavigateToActa,
         onEvent = viewModel::onEvent
     )
 }
@@ -64,7 +67,8 @@ fun OrderDetailScreen(
     onBackClick: () -> Unit,
     onEvent: (OrderDetailUiEvent) -> Unit,
     modifier: Modifier = Modifier,
-    onNavigateToFieldCollection: (String) -> Unit = {}
+    onNavigateToFieldCollection: (String) -> Unit = {},
+    onNavigateToActa: (String) -> Unit = {}
 ) {
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -93,6 +97,9 @@ fun OrderDetailScreen(
                     canStartAttention = uiState.canStartAttention,
                     onStartAttentionClick = {
                         onNavigateToFieldCollection(uiState.order.numeroSolicitud)
+                    },
+                    onViewActaClick = {
+                        onNavigateToActa(uiState.order.numeroSolicitud)
                     }
                 )
             }
@@ -104,7 +111,8 @@ fun OrderDetailScreen(
 private fun OrderDetailSectionsContent(
     order: OrdenRecoleccion,
     canStartAttention: Boolean,
-    onStartAttentionClick: () -> Unit
+    onStartAttentionClick: () -> Unit,
+    onViewActaClick: () -> Unit
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -124,7 +132,8 @@ private fun OrderDetailSectionsContent(
             ConfirmationSection(
                 order = order,
                 canStartAttention = canStartAttention,
-                onStartAttentionClick = onStartAttentionClick
+                onStartAttentionClick = onStartAttentionClick,
+                onViewActaClick = onViewActaClick
             )
         }
     }
@@ -218,7 +227,8 @@ private fun ProvenientesSection(order: OrdenRecoleccion) {
 private fun ConfirmationSection(
     order: OrdenRecoleccion,
     canStartAttention: Boolean,
-    onStartAttentionClick: () -> Unit
+    onStartAttentionClick: () -> Unit,
+    onViewActaClick: () -> Unit
 ) {
     val actionLabel = when (order.estado) {
         OrdenStatus.ORDEN_ASIGNADA -> "Iniciar atención"
@@ -235,6 +245,13 @@ private fun ConfirmationSection(
             onClick = onStartAttentionClick,
             enabled = true
         )
+        if (order.numeroActaGenerada != null) {
+            BupasSecondaryButton(
+                text = "Ver Acta (${order.numeroActaGenerada}.pdf)",
+                onClick = onViewActaClick,
+                enabled = order.canViewActaPdf
+            )
+        }
         if (!canStartAttention) {
             Text(
                 text = if (order.estado.isReadOnlyLocked) {

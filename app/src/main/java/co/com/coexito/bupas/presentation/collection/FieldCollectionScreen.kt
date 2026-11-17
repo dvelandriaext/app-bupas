@@ -35,6 +35,7 @@ import co.com.coexito.bupas.domain.usecase.CollectionTotalsSummary
 @Composable
 fun FieldCollectionRoute(
     onBackClick: () -> Unit,
+    onNavigateToActa: (String) -> Unit = {},
     viewModel: FieldCollectionViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -42,6 +43,7 @@ fun FieldCollectionRoute(
     FieldCollectionScreen(
         uiState = uiState,
         onBackClick = onBackClick,
+        onNavigateToActa = onNavigateToActa,
         onEvent = viewModel::onEvent
     )
 }
@@ -51,7 +53,8 @@ fun FieldCollectionScreen(
     uiState: FieldCollectionUiState,
     onBackClick: () -> Unit,
     onEvent: (FieldCollectionUiEvent) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onNavigateToActa: (String) -> Unit = {}
 ) {
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -77,7 +80,8 @@ fun FieldCollectionScreen(
                 )
                 uiState.order != null -> FieldCollectionContent(
                     uiState = uiState,
-                    onEvent = onEvent
+                    onEvent = onEvent,
+                    onNavigateToActa = onNavigateToActa
                 )
             }
         }
@@ -92,7 +96,8 @@ fun FieldCollectionScreen(
 @Composable
 private fun FieldCollectionContent(
     uiState: FieldCollectionUiState,
-    onEvent: (FieldCollectionUiEvent) -> Unit
+    onEvent: (FieldCollectionUiEvent) -> Unit,
+    onNavigateToActa: (String) -> Unit
 ) {
     val order = uiState.order ?: return
     val showPhysicalSections = uiState.isCollectionSectionEnabled && !uiState.isNoRecolectadaSelected
@@ -119,7 +124,12 @@ private fun FieldCollectionContent(
             )
         }
         if (showPhysicalSections) {
-            physicalCollectionItems(uiState = uiState, order = order, onEvent = onEvent)
+            physicalCollectionItems(
+                uiState = uiState,
+                order = order,
+                onEvent = onEvent,
+                onNavigateToActa = onNavigateToActa
+            )
         }
         if (showActions) {
             item {
@@ -138,7 +148,8 @@ private fun FieldCollectionContent(
 private fun LazyListScope.physicalCollectionItems(
     uiState: FieldCollectionUiState,
     order: OrdenRecoleccion,
-    onEvent: (FieldCollectionUiEvent) -> Unit
+    onEvent: (FieldCollectionUiEvent) -> Unit,
+    onNavigateToActa: (String) -> Unit
 ) {
     item {
         CollectionArticlesSection(
@@ -184,7 +195,9 @@ private fun LazyListScope.physicalCollectionItems(
             },
             onObservacionesChanged = { onEvent(FieldCollectionUiEvent.OnObservacionesCampoChanged(it)) },
             onSignatureCaptured = { onEvent(FieldCollectionUiEvent.OnSignatureCaptured(it)) },
-            onSignatureCleared = { onEvent(FieldCollectionUiEvent.OnSignatureCleared) }
+            onSignatureCleared = { onEvent(FieldCollectionUiEvent.OnSignatureCleared) },
+            canViewActaPdf = order.canViewActaPdf,
+            onViewActaClick = { onNavigateToActa(order.numeroSolicitud) }
         )
     }
 }

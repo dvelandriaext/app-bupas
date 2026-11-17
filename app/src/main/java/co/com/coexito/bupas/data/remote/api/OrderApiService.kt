@@ -6,6 +6,7 @@ import co.com.coexito.bupas.data.remote.dto.PrecioArticuloBupasDto
 import co.com.coexito.bupas.data.remote.dto.SaveFieldCollectionRequestDto
 import retrofit2.http.Body
 import retrofit2.http.GET
+import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
@@ -42,4 +43,9 @@ interface OrderApiService {
         @Path("solicitudId") solicitudId: String,
         @Body request: SaveFieldCollectionRequestDto
     ): OrderDto
+
+    @POST("api/v1/mobile/orders/{solicitudId}/certificate/retry")
+    suspend fun retryActaContingency(
+        @Path("solicitudId") solicitudId: String
+    ): OrderDto = getOrderBySolicitud(solicitudId)
 }

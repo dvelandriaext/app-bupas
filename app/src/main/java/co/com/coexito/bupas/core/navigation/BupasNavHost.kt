@@ -16,6 +16,7 @@ import co.com.coexito.bupas.presentation.auth.LoginRoute
 import co.com.coexito.bupas.presentation.auth.RecoverPasswordRoute
 import co.com.coexito.bupas.presentation.auth.SessionGuardState
 import co.com.coexito.bupas.presentation.auth.SessionViewModel
+import co.com.coexito.bupas.presentation.certificate.ActaRespelRoute
 import co.com.coexito.bupas.presentation.collection.FieldCollectionRoute
 import co.com.coexito.bupas.presentation.orders.OrderDetailRoute
 import co.com.coexito.bupas.presentation.orders.OrdersInboxRoute
@@ -97,6 +98,11 @@ fun BupasNavHost(
                         launchSingleTop = true
                     }
                 },
+                onNavigateToActa = { numeroSolicitud ->
+                    navController.navigate(BupasDestination.ActaCertificate.createRoute(numeroSolicitud)) {
+                        launchSingleTop = true
+                    }
+                },
                 onSafeLogout = {
                     sessionViewModel.performSafeLogout {
                         navController.navigate(BupasDestination.Login.route) {
@@ -129,6 +135,11 @@ fun BupasNavHost(
                     navController.navigate(BupasDestination.FieldCollection.createRoute(numeroSolicitud)) {
                         launchSingleTop = true
                     }
+                },
+                onNavigateToActa = { numeroSolicitud ->
+                    navController.navigate(BupasDestination.ActaCertificate.createRoute(numeroSolicitud)) {
+                        launchSingleTop = true
+                    }
                 }
             )
         }
@@ -149,6 +160,31 @@ fun BupasNavHost(
             }
 
             FieldCollectionRoute(
+                onBackClick = { navController.popBackStack() },
+                onNavigateToActa = { numeroSolicitud ->
+                    navController.navigate(BupasDestination.ActaCertificate.createRoute(numeroSolicitud)) {
+                        launchSingleTop = true
+                    }
+                }
+            )
+        }
+
+        composable(
+            route = BupasDestination.ActaCertificate.route,
+            arguments = listOf(
+                navArgument("numeroSolicitud") { type = NavType.StringType }
+            )
+        ) {
+            LaunchedEffect(sessionGuardState) {
+                if (sessionGuardState is SessionGuardState.Unauthenticated) {
+                    navController.navigate(BupasDestination.Login.route) {
+                        popUpTo(navController.graph.id) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                }
+            }
+
+            ActaRespelRoute(
                 onBackClick = { navController.popBackStack() }
             )
         }

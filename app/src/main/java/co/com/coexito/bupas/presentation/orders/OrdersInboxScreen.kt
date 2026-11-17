@@ -54,6 +54,7 @@ fun OrdersInboxRoute(
     driverSubtitle: String,
     onNavigateToDetail: (String) -> Unit,
     onSafeLogout: () -> Unit,
+    onNavigateToActa: (String) -> Unit = {},
     themeMode: ThemeMode = ThemeMode.SYSTEM,
     onThemeModeSelected: (ThemeMode) -> Unit = {},
     viewModel: OrdersInboxViewModel = hiltViewModel()
@@ -66,6 +67,9 @@ fun OrdersInboxRoute(
             when (effect) {
                 is OrdersInboxNavigationEffect.NavigateToOrderDetail -> {
                     onNavigateToDetail(effect.numeroSolicitud)
+                }
+                is OrdersInboxNavigationEffect.NavigateToActaCertificate -> {
+                    onNavigateToActa(effect.numeroSolicitud)
                 }
             }
         }

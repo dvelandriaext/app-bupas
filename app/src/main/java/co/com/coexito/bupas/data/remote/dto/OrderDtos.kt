@@ -33,7 +33,16 @@ data class OrderDto(
     val identificacionResponsableEntrega: String = "",
     val fechaHoraInicioAtencion: String? = null,
     val fechaHoraFinalizacion: String? = null,
-    val firmaDigitalBase64: String? = null
+    val firmaDigitalBase64: String? = null,
+    val telefonoCliente: String = "3164208890",
+    val correoPrincipalCliente: String = "ambiental@cliente.com.co",
+    val correoAlternoCliente: String? = null,
+    val conductorNombre: String = "Juan Carlos Ramírez",
+    val conductorCedula: String = "1144089231",
+    val placaVehiculo: String = "WXY-482",
+    val estadoGeneracionActa: String? = null,
+    val estadoEnvioActa: String? = null,
+    val detalleErrorActa: String? = null
 )
 
 @Serializable

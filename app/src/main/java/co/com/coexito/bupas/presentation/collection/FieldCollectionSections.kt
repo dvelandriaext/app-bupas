@@ -163,7 +163,9 @@ fun CollectionConfirmationSection(
     onObservacionesChanged: (String) -> Unit,
     onSignatureCaptured: (String) -> Unit,
     onSignatureCleared: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    canViewActaPdf: Boolean = true,
+    onViewActaClick: (() -> Unit)? = null
 ) {
     BupasSectionCard(
         title = "Confirmación Recolección",
@@ -211,6 +213,13 @@ fun CollectionConfirmationSection(
             isError = !firmaError.isNullOrBlank(),
             errorMessage = firmaError
         )
+        if (!numeroActaGenerada.isNullOrBlank() && onViewActaClick != null) {
+            BupasSecondaryButton(
+                text = "Ver Acta ($numeroActaGenerada.pdf)",
+                onClick = onViewActaClick,
+                enabled = canViewActaPdf
+            )
+        }
     }
 }
 

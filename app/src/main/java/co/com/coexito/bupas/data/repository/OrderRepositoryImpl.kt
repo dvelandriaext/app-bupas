@@ -11,6 +11,7 @@ import co.com.coexito.bupas.data.remote.dto.SaveFieldCollectionRequestDto
 import co.com.coexito.bupas.data.remote.mapper.parseOrdenStatus
 import co.com.coexito.bupas.data.remote.mapper.toDomain
 import co.com.coexito.bupas.data.remote.mapper.toDto
+import co.com.coexito.bupas.domain.model.ActaRespel
 import co.com.coexito.bupas.domain.model.AssignedOrdersResult
 import co.com.coexito.bupas.domain.model.FieldCollectionSubmission
 import co.com.coexito.bupas.domain.model.OrdenRecoleccion
@@ -18,6 +19,7 @@ import co.com.coexito.bupas.domain.model.OrdenStatus
 import co.com.coexito.bupas.domain.model.OrderSearchFilter
 import co.com.coexito.bupas.domain.model.PrecioArticuloBupas
 import co.com.coexito.bupas.domain.repository.OrderRepository
+import co.com.coexito.bupas.domain.usecase.certificate.BuildActaRespelUseCase
 import java.io.IOException
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineDispatcher
@@ -134,10 +136,38 @@ class OrderRepositoryImpl @Inject constructor(
         }
     }
 
+    private val buildActaRespelUseCase = BuildActaRespelUseCase()
+
     override suspend fun hasPendingOfflineDraft(
         numeroSolicitud: String
     ): Boolean = withContext(ioDispatcher) {
         localDataSource.getDraft(numeroSolicitud)?.pendingSync == true
+    }
+
+    override suspend fun getActaBySolicitud(
+        numeroSolicitud: String
+    ): Result<ActaRespel> = withContext(ioDispatcher) {
+        runCatching {
+            val order = fetchAndResolveOrder(numeroSolicitud).toDomain()
+            buildActaRespelUseCase(order)
+                ?: throw IllegalStateException(
+                    "La orden ${order.numeroSolicitud} no cuenta con Acta Respel emitida (requiere Recolección Realizada con cantidades > 0)."
+                )
+        }
+    }
+
+    override suspend fun retryActaContingency(
+        numeroSolicitud: String
+    ): Result<ActaRespel> = withContext(ioDispatcher) {
+        runCatching {
+            val updatedDto = orderApiService.retryActaContingency(numeroSolicitud)
+            localDataSource.cacheOrder(updatedDto)
+            val order = updatedDto.toDomain()
+            buildActaRespelUseCase(order)
+                ?: throw IllegalStateException(
+                    "No fue posible regenerar el Acta Respel para la solicitud ${order.numeroSolicitud}."
+                )
+        }
     }
 
     private suspend fun fetchAndResolveOrder(numeroSolicitud: String): OrderDto {

@@ -9,6 +9,8 @@ import co.com.coexito.bupas.data.remote.dto.PrecioArticuloBupasDto
 import co.com.coexito.bupas.data.remote.dto.SaveFieldCollectionRequestDto
 import co.com.coexito.bupas.data.remote.dto.TerceroProvenienteDto
 import co.com.coexito.bupas.data.remote.mapper.parseOrdenStatus
+import co.com.coexito.bupas.domain.model.EstadoEnvioActa
+import co.com.coexito.bupas.domain.model.EstadoGeneracionActa
 import co.com.coexito.bupas.domain.model.OrdenStatus
 import kotlinx.coroutines.delay
 
@@ -98,6 +100,46 @@ class FakeOrderApiService(
         return updatedOrder
     }
 
+    override suspend fun retryActaContingency(solicitudId: String): OrderDto {
+        if (networkDelayMillis > 0L) {
+            delay(networkDelayMillis)
+        }
+        val index = ordersCatalog.indexOfFirst {
+            it.numeroSolicitud.equals(solicitudId, ignoreCase = true)
+        }
+        if (index == -1) {
+            throw NoSuchElementException("No se encontró la orden $solicitudId")
+        }
+        val current = ordersCatalog[index]
+        val recovered = current.copy(
+            numeroActaGenerada = current.numeroActaGenerada
+                ?: buildActaNumber(current.tipoDevolucion, current.numeroSolicitud),
+            estadoGeneracionActa = EstadoGeneracionActa.GENERADA.name,
+            estadoEnvioActa = EstadoEnvioActa.ENVIADA.name,
+            detalleErrorActa = null
+        )
+        ordersCatalog[index] = recovered
+        return recovered
+    }
+
+    fun simulateActaContingencyState(
+        solicitudId: String,
+        estadoGeneracion: EstadoGeneracionActa,
+        estadoEnvio: EstadoEnvioActa,
+        detalleError: String
+    ) {
+        val index = ordersCatalog.indexOfFirst {
+            it.numeroSolicitud.equals(solicitudId, ignoreCase = true)
+        }
+        if (index != -1) {
+            ordersCatalog[index] = ordersCatalog[index].copy(
+                estadoGeneracionActa = estadoGeneracion.name,
+                estadoEnvioActa = estadoEnvio.name,
+                detalleErrorActa = detalleError
+            )
+        }
+    }
+
     private fun resolveFinalStatus(request: SaveFieldCollectionRequestDto): String {
         return if (request.finalizeCollection && request.estado != OrdenStatus.NO_RECOLECTADA.name) {
             OrdenStatus.RECOLECCION_REALIZADA.name
@@ -137,6 +179,8 @@ class FakeOrderApiService(
             finalStatus == OrdenStatus.RECOLECCION_REALIZADA.name -> null
             else -> current.numeroActaGenerada
         }
+        val estadoGen = if (generatedActa != null) EstadoGeneracionActa.GENERADA.name else null
+        val estadoEnv = if (generatedActa != null) EstadoEnvioActa.ENVIADA.name else null
 
         return current.copy(
             estado = finalStatus,
@@ -150,7 +194,10 @@ class FakeOrderApiService(
             numeroActaGenerada = generatedActa,
             fechaHoraInicioAtencion = current.fechaHoraInicioAtencion ?: request.fechaHoraInicioAtencion,
             fechaHoraFinalizacion = request.fechaHoraFinalizacion ?: current.fechaHoraFinalizacion,
-            firmaDigitalBase64 = request.firmaDigitalBase64 ?: current.firmaDigitalBase64
+            firmaDigitalBase64 = request.firmaDigitalBase64 ?: current.firmaDigitalBase64,
+            estadoGeneracionActa = estadoGen,
+            estadoEnvioActa = estadoEnv,
+            detalleErrorActa = null
         )
     }
 
@@ -386,6 +433,11 @@ private fun buildDummyCatalog(): List<OrderDto> = listOf(
         fechaHoraInicioAtencion = "2026-11-09 09:10:00",
         fechaHoraFinalizacion = "2026-11-09 09:52:00",
         firmaDigitalBase64 = "U0lHTkFUVVJFX0lOU18wMDQ4",
+        telefonoCliente = "3157401122",
+        correoPrincipalCliente = "ambiental@autocentrovalle.com.co",
+        correoAlternoCliente = "gerencia@autocentrovalle.com.co",
+        estadoGeneracionActa = EstadoGeneracionActa.GENERADA.name,
+        estadoEnvioActa = EstadoEnvioActa.ENVIADA.name,
         articulos = listOf(
             ArticuloBupasDto(
                 codigoArticulo = "BUP-AUTO-34",
@@ -445,6 +497,11 @@ private fun buildDummyCatalog(): List<OrderDto> = listOf(
         fechaHoraInicioAtencion = "2026-10-08 14:05:00",
         fechaHoraFinalizacion = "2026-10-08 14:50:00",
         firmaDigitalBase64 = "U0lHTkFUVVJFX1BPU18wMTEy",
+        telefonoCliente = "3189023344",
+        correoPrincipalCliente = "logistica@electricapacifico.com.co",
+        correoAlternoCliente = null,
+        estadoGeneracionActa = EstadoGeneracionActa.GENERADA.name,
+        estadoEnvioActa = EstadoEnvioActa.ENVIADA.name,
         articulos = listOf(
             ArticuloBupasDto(
                 codigoArticulo = "BUP-AUTO-42",

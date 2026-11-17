@@ -1,5 +1,6 @@
 package co.com.coexito.bupas.domain.repository
 
+import co.com.coexito.bupas.domain.model.ActaRespel
 import co.com.coexito.bupas.domain.model.AssignedOrdersResult
 import co.com.coexito.bupas.domain.model.FieldCollectionSubmission
 import co.com.coexito.bupas.domain.model.OrdenRecoleccion
@@ -31,4 +32,14 @@ interface OrderRepository {
     suspend fun hasPendingOfflineDraft(
         numeroSolicitud: String
     ): Boolean = false
+
+    suspend fun getActaBySolicitud(
+        numeroSolicitud: String
+    ): Result<ActaRespel> = Result.failure(
+        NoSuchElementException("No se encontró Acta Respel para la solicitud $numeroSolicitud")
+    )
+
+    suspend fun retryActaContingency(
+        numeroSolicitud: String
+    ): Result<ActaRespel> = getActaBySolicitud(numeroSolicitud)
 }

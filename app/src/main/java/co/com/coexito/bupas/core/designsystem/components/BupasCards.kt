@@ -115,6 +115,7 @@ fun BupasOrderCard(
                     if (order.numeroActaGenerada != null && onViewActaClick != null) {
                         BupasTextButton(
                             text = "Ver Acta",
+                            enabled = order.canViewActaPdf,
                             onClick = { onViewActaClick(order.numeroActaGenerada) }
                         )
                     }
